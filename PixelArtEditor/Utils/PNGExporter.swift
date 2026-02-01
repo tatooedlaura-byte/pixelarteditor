@@ -29,17 +29,32 @@ enum PNGExporter {
         return renderImage(grid: grid, scale: scale)?.pngData()
     }
 
-    static func saveToPhotos(grid: PixelGrid, scale: Int = 1, completion: @escaping (Bool) -> Void) {
+    static func saveToPhotos(grid: PixelGrid, scale: Int = 1, completion: @escaping (Bool, String?) -> Void) {
         guard let image = renderImage(grid: grid, scale: scale) else {
-            completion(false)
+            completion(false, "Could not render image")
             return
         }
-        UIImageWriteToSavedPhotosAlbum(image, nil, nil, nil)
-        completion(true)
+        let saver = ImageSaver(completion: completion)
+        objc_setAssociatedObject(image, "saver", saver, .OBJC_ASSOCIATION_RETAIN)
+        UIImageWriteToSavedPhotosAlbum(image, saver, #selector(ImageSaver.image(_:didFinishSavingWithError:contextInfo:)), nil)
     }
 
     static func copyToClipboard(grid: PixelGrid, scale: Int = 1) {
         guard let image = renderImage(grid: grid, scale: scale) else { return }
         UIPasteboard.general.image = image
+    }
+}
+
+private class ImageSaver: NSObject {
+    let completion: (Bool, String?) -> Void
+
+    init(completion: @escaping (Bool, String?) -> Void) {
+        self.completion = completion
+    }
+
+    @objc func image(_ image: UIImage, didFinishSavingWithError error: Error?, contextInfo: UnsafeRawPointer) {
+        DispatchQueue.main.async {
+            self.completion(error == nil, error?.localizedDescription)
+        }
     }
 }

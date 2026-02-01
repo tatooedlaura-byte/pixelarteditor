@@ -8,14 +8,16 @@ struct CanvasView: UIViewRepresentable {
     @Binding var redoTrigger: Int
     @Binding var templateGrid: PixelGrid?
     var onPickColor: (UIColor) -> Void
-    var onCanvasReady: (PixelCanvasUIView) -> Void
+    var canvasStore: CanvasStore
 
     func makeUIView(context: Context) -> PixelCanvasUIView {
         let view = PixelCanvasUIView(gridSize: gridSize)
         view.delegate = context.coordinator
         view.currentColor = currentColor
         view.currentTool = currentTool
-        onCanvasReady(view)
+        DispatchQueue.main.async {
+            canvasStore.canvasView = view
+        }
         return view
     }
 

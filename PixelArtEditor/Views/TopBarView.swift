@@ -5,8 +5,11 @@ struct TopBarView: View {
     @Binding var undoTrigger: Int
     @Binding var redoTrigger: Int
     @Binding var templateGrid: PixelGrid?
-    var canvasView: PixelCanvasUIView?
+    @ObservedObject var canvasStore: CanvasStore
     @State private var showExportMenu = false
+    @State private var showSaveAlert = false
+    @State private var saveSuccess = false
+    @State private var saveError = ""
 
     private let sizes = [8, 16, 32, 64]
 
@@ -66,7 +69,7 @@ struct TopBarView: View {
                     exportPNG(scale: 8)
                 }
                 Button("Copy to Clipboard") {
-                    if let cv = canvasView {
+                    if let cv = canvasStore.canvasView {
                         PNGExporter.copyToClipboard(grid: cv.grid, scale: 4)
                     }
                 }
@@ -82,10 +85,24 @@ struct TopBarView: View {
         .padding(.horizontal, 16)
         .padding(.vertical, 8)
         .background(.ultraThinMaterial)
+        .alert(saveSuccess ? "Saved!" : "Save Failed", isPresented: $showSaveAlert) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(saveSuccess ? "Image saved to Photos." : saveError.isEmpty ? "Unknown error" : saveError)
+        }
     }
 
     private func exportPNG(scale: Int) {
-        guard let cv = canvasView else { return }
-        PNGExporter.saveToPhotos(grid: cv.grid, scale: scale) { _ in }
+        guard let cv = canvasStore.canvasView else {
+            saveError = "No canvas found"
+            saveSuccess = false
+            showSaveAlert = true
+            return
+        }
+        PNGExporter.saveToPhotos(grid: cv.grid, scale: scale) { success, error in
+            saveError = error ?? ""
+            saveSuccess = success
+            showSaveAlert = true
+        }
     }
 }

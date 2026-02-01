@@ -8,7 +8,7 @@ struct ContentView: View {
     @State private var redoTrigger: Int = 0
     @State private var selectedPaletteIndex: Int = 0
     @State private var templateGrid: PixelGrid?
-    @State private var canvasView: PixelCanvasUIView?
+    @StateObject private var canvasStore = CanvasStore()
 
     var body: some View {
         VStack(spacing: 0) {
@@ -17,7 +17,7 @@ struct ContentView: View {
                 undoTrigger: $undoTrigger,
                 redoTrigger: $redoTrigger,
                 templateGrid: $templateGrid,
-                canvasView: canvasView
+                canvasStore: canvasStore
             )
 
             ZStack(alignment: .leading) {
@@ -33,9 +33,7 @@ struct ContentView: View {
                         currentColor = color
                         currentTool = .pencil
                     },
-                    onCanvasReady: { view in
-                        canvasView = view
-                    }
+                    canvasStore: canvasStore
                 )
                 .background(Color(.systemGray6))
 
