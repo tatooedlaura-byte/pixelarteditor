@@ -15,20 +15,21 @@ enum CharacterTemplates {
     }
 
     // MARK: - 8×8
+    // Bitizen: wide rounded head, narrower body, tiny legs
 
     private static func template8() -> PixelGrid {
         let O = Optional(outline)
         let n: UIColor? = nil
 
         let data: [[UIColor?]] = [
-            [n, n, O, O, O, n, n, n],
-            [n, O, n, n, n, O, n, n],
-            [n, O, n, n, n, O, n, n],
-            [n, n, O, O, O, n, n, n],
-            [n, O, O, O, O, O, n, n],
-            [n, n, O, n, O, n, n, n],
-            [n, n, O, n, O, n, n, n],
-            [n, n, O, n, O, n, n, n],
+            [n, n, O, O, O, O, n, n],
+            [n, O, n, n, n, n, O, n],
+            [n, O, n, n, n, n, O, n],
+            [n, n, O, O, O, O, n, n],
+            [n, n, O, n, n, O, n, n],
+            [n, n, O, n, n, O, n, n],
+            [n, n, O, n, n, O, n, n],
+            [n, n, O, n, n, O, n, n],
         ]
         return gridFrom(data: data, size: 8)
     }
@@ -39,23 +40,24 @@ enum CharacterTemplates {
         let O = Optional(outline)
         let n: UIColor? = nil
 
+        //        0  1  2  3  4  5  6  7  8  9  10 11 12 13 14 15
         let data: [[UIColor?]] = [
-            [n,n,n,n,n, n, n, n, n, n, n,n,n,n,n,n],
-            [n,n,n,n,n, O, O, O, O, O, n,n,n,n,n,n],
-            [n,n,n,n, O, n, n, n, n, n, O,n,n,n,n,n],
-            [n,n,n,n, O, n, n, n, n, n, O,n,n,n,n,n],
-            [n,n,n,n, O, n, n, n, n, n, O,n,n,n,n,n],
-            [n,n,n,n, n, O, n, n, n, O, n,n,n,n,n,n],
-            [n,n,n,n, n, n, O, O, O, n, n,n,n,n,n,n],
-            [n,n,n, O, O, O, O, O, O, O, O, O,n,n,n,n],
-            [n,n, O, n, n, O, O, O, O, O, n, n, O,n,n,n],
-            [n,n, n, n, n, O, O, O, O, O, n, n, n,n,n,n],
-            [n,n,n, n, n, n, O, O, O, n, n, n,n,n,n,n],
-            [n,n,n, n, n, O, O, n, O, O, n, n,n,n,n,n],
-            [n,n,n, n, n, O, n, n, n, O, n, n,n,n,n,n],
-            [n,n,n, n, n, O, n, n, n, O, n, n,n,n,n,n],
-            [n,n,n, n, n, O, O, n, O, O, n, n,n,n,n,n],
-            [n,n,n,n,n, n, n, n, n, n, n,n,n,n,n,n],
+            [n, n, n, n, O, O, O, O, O, O, O, n, n, n, n, n],  // 0  hair top
+            [n, n, n, O, O, O, O, O, O, O, O, O, n, n, n, n],  // 1  hair
+            [n, n, O, n, n, n, n, n, n, n, n, n, O, n, n, n],  // 2  face
+            [n, n, O, n, n, n, n, n, n, n, n, n, O, n, n, n],  // 3  face
+            [n, n, O, n, n, n, n, n, n, n, n, n, O, n, n, n],  // 4  face
+            [n, n, n, O, O, O, O, O, O, O, O, O, n, n, n, n],  // 5  chin
+            [n, n, n, n, O, n, n, n, n, n, O, n, n, n, n, n],  // 6  body
+            [n, n, n, n, O, n, n, n, n, n, O, n, n, n, n, n],  // 7  body
+            [n, n, n, n, O, n, n, n, n, n, O, n, n, n, n, n],  // 8  body
+            [n, n, n, n, O, n, n, n, n, n, O, n, n, n, n, n],  // 9  body
+            [n, n, n, n, O, O, O, O, O, O, O, n, n, n, n, n],  // 10 belt/waist
+            [n, n, n, n, n, O, n, n, n, O, n, n, n, n, n, n],  // 11 legs
+            [n, n, n, n, n, O, n, n, n, O, n, n, n, n, n, n],  // 12 legs
+            [n, n, n, n, O, O, n, n, n, O, O, n, n, n, n, n],  // 13 feet
+            [n, n, n, n, n, n, n, n, n, n, n, n, n, n, n, n],  // 14
+            [n, n, n, n, n, n, n, n, n, n, n, n, n, n, n, n],  // 15
         ]
         return gridFrom(data: data, size: 16)
     }
@@ -64,21 +66,34 @@ enum CharacterTemplates {
 
     private static func template32() -> PixelGrid {
         var grid = PixelGrid(width: 32, height: 32)
-        // Head outline
-        strokeRect(&grid, x: 11, y: 2, w: 10, h: 10)
-        // Neck
-        grid[12, 15] = outline
-        grid[12, 16] = outline
-        // Body outline
-        strokeRect(&grid, x: 9, y: 13, w: 14, h: 8)
-        // Left arm
-        strokeRect(&grid, x: 7, y: 13, w: 2, h: 6)
-        // Right arm
-        strokeRect(&grid, x: 23, y: 13, w: 2, h: 6)
-        // Left leg
-        strokeRect(&grid, x: 11, y: 21, w: 4, h: 7)
-        // Right leg
-        strokeRect(&grid, x: 17, y: 21, w: 4, h: 7)
+
+        // Hair (flat across top of head, full width)
+        hLine(&grid, x: 10, y: 2, w: 12)
+        hLine(&grid, x: 9, y: 3, w: 14)
+
+        // Head (wide, rounded corners)
+        // left side
+        vLine(&grid, x: 8, y: 4, h: 7)
+        // right side
+        vLine(&grid, x: 23, y: 4, h: 7)
+        // bottom of head
+        hLine(&grid, x: 9, y: 11, w: 14)
+
+        // Body (narrower than head)
+        strokeRect(&grid, x: 11, y: 12, w: 10, h: 8)
+
+        // Legs (short stubby)
+        // left
+        vLine(&grid, x: 12, y: 20, h: 3)
+        vLine(&grid, x: 14, y: 20, h: 3)
+        // right
+        vLine(&grid, x: 17, y: 20, h: 3)
+        vLine(&grid, x: 19, y: 20, h: 3)
+
+        // Feet (wider than legs)
+        hLine(&grid, x: 11, y: 23, w: 4)
+        hLine(&grid, x: 17, y: 23, w: 4)
+
         return grid
     }
 
@@ -86,23 +101,39 @@ enum CharacterTemplates {
 
     private static func template64() -> PixelGrid {
         var grid = PixelGrid(width: 64, height: 64)
-        // Head outline
-        strokeRect(&grid, x: 22, y: 4, w: 20, h: 18)
-        // Neck
-        for col in 30...33 {
-            grid[22, col] = outline
-            grid[23, col] = outline
-        }
-        // Body outline
-        strokeRect(&grid, x: 18, y: 24, w: 28, h: 18)
-        // Left arm
-        strokeRect(&grid, x: 14, y: 24, w: 4, h: 14)
-        // Right arm
-        strokeRect(&grid, x: 46, y: 24, w: 4, h: 14)
-        // Left leg
-        strokeRect(&grid, x: 22, y: 42, w: 8, h: 14)
-        // Right leg
-        strokeRect(&grid, x: 34, y: 42, w: 8, h: 14)
+
+        // Hair (flat rows on top)
+        hLine(&grid, x: 20, y: 4, w: 24)
+        hLine(&grid, x: 19, y: 5, w: 26)
+        hLine(&grid, x: 18, y: 6, w: 28)
+        hLine(&grid, x: 17, y: 7, w: 30)
+
+        // Head sides
+        vLine(&grid, x: 16, y: 8, h: 14)
+        vLine(&grid, x: 47, y: 8, h: 14)
+
+        // Bottom of head
+        hLine(&grid, x: 17, y: 22, w: 30)
+
+        // Body (narrower)
+        strokeRect(&grid, x: 22, y: 23, w: 20, h: 16)
+
+        // Legs (short and stubby)
+        // left
+        vLine(&grid, x: 24, y: 39, h: 6)
+        vLine(&grid, x: 25, y: 39, h: 6)
+        vLine(&grid, x: 28, y: 39, h: 6)
+        vLine(&grid, x: 29, y: 39, h: 6)
+        // right
+        vLine(&grid, x: 34, y: 39, h: 6)
+        vLine(&grid, x: 35, y: 39, h: 6)
+        vLine(&grid, x: 38, y: 39, h: 6)
+        vLine(&grid, x: 39, y: 39, h: 6)
+
+        // Feet
+        hLine(&grid, x: 22, y: 45, w: 8)
+        hLine(&grid, x: 34, y: 45, w: 8)
+
         return grid
     }
 
@@ -126,6 +157,18 @@ enum CharacterTemplates {
         for row in y..<(y + h) {
             grid[row, x] = outline
             grid[row, x + w - 1] = outline
+        }
+    }
+
+    private static func hLine(_ grid: inout PixelGrid, x: Int, y: Int, w: Int) {
+        for col in x..<(x + w) {
+            grid[y, col] = outline
+        }
+    }
+
+    private static func vLine(_ grid: inout PixelGrid, x: Int, y: Int, h: Int) {
+        for row in y..<(y + h) {
+            grid[row, x] = outline
         }
     }
 }
