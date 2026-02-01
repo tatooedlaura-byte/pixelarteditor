@@ -6,6 +6,7 @@ struct CanvasView: UIViewRepresentable {
     @Binding var gridSize: Int
     @Binding var undoTrigger: Int
     @Binding var redoTrigger: Int
+    @Binding var templateGrid: PixelGrid?
     var onPickColor: (UIColor) -> Void
     var onCanvasReady: (PixelCanvasUIView) -> Void
 
@@ -30,7 +31,11 @@ struct CanvasView: UIViewRepresentable {
             context.coordinator.lastRedoTrigger = redoTrigger
             uiView.performRedo()
         }
-        if context.coordinator.lastGridSize != gridSize {
+        if let template = templateGrid {
+            DispatchQueue.main.async { templateGrid = nil }
+            uiView.loadGrid(template)
+            context.coordinator.lastGridSize = template.width
+        } else if context.coordinator.lastGridSize != gridSize {
             context.coordinator.lastGridSize = gridSize
             uiView.changeGridSize(gridSize)
         }

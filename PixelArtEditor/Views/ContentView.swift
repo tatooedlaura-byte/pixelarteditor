@@ -7,6 +7,7 @@ struct ContentView: View {
     @State private var undoTrigger: Int = 0
     @State private var redoTrigger: Int = 0
     @State private var selectedPaletteIndex: Int = 0
+    @State private var templateGrid: PixelGrid?
     @State private var canvasView: PixelCanvasUIView?
 
     var body: some View {
@@ -15,6 +16,7 @@ struct ContentView: View {
                 gridSize: $gridSize,
                 undoTrigger: $undoTrigger,
                 redoTrigger: $redoTrigger,
+                templateGrid: $templateGrid,
                 canvasView: canvasView
             )
 
@@ -26,6 +28,7 @@ struct ContentView: View {
                     gridSize: $gridSize,
                     undoTrigger: $undoTrigger,
                     redoTrigger: $redoTrigger,
+                    templateGrid: $templateGrid,
                     onPickColor: { color in
                         currentColor = color
                         currentTool = .pencil

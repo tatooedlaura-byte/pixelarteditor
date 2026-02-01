@@ -19,6 +19,7 @@
 		A100000A /* Palette.swift in Sources */ = {isa = PBXBuildFile; fileRef = A200000A; };
 		A100000B /* FloodFill.swift in Sources */ = {isa = PBXBuildFile; fileRef = A200000B; };
 		A100000C /* PNGExporter.swift in Sources */ = {isa = PBXBuildFile; fileRef = A200000C; };
+		A100000D /* CharacterTemplates.swift in Sources */ = {isa = PBXBuildFile; fileRef = A200000D; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -34,6 +35,7 @@
 		A200000A /* Palette.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Palette.swift; sourceTree = "<group>"; };
 		A200000B /* FloodFill.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FloodFill.swift; sourceTree = "<group>"; };
 		A200000C /* PNGExporter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PNGExporter.swift; sourceTree = "<group>"; };
+		A200000D /* CharacterTemplates.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CharacterTemplates.swift; sourceTree = "<group>"; };
 		A3000001 /* PixelArtEditor.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = PixelArtEditor.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
@@ -111,6 +113,7 @@
 				A2000008 /* PixelGrid.swift */,
 				A2000009 /* Tool.swift */,
 				A200000A /* Palette.swift */,
+				A200000D /* CharacterTemplates.swift */,
 			);
 			path = Models;
 			sourceTree = "<group>";
@@ -190,6 +193,7 @@
 				A100000A /* Palette.swift in Sources */,
 				A100000B /* FloodFill.swift in Sources */,
 				A100000C /* PNGExporter.swift in Sources */,
+				A100000D /* CharacterTemplates.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

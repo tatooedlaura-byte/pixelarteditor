@@ -125,6 +125,14 @@ class PixelCanvasUIView: UIView {
     var canUndo: Bool { !undoStack.isEmpty }
     var canRedo: Bool { !redoStack.isEmpty }
 
+    func loadGrid(_ newGrid: PixelGrid) {
+        pushUndo()
+        grid = newGrid
+        redoStack.removeAll()
+        setNeedsDisplay()
+        delegate?.canvasDidChange()
+    }
+
     // MARK: - Coordinate conversion
 
     private var cellSize: CGFloat {

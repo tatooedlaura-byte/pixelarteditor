@@ -4,6 +4,7 @@ struct TopBarView: View {
     @Binding var gridSize: Int
     @Binding var undoTrigger: Int
     @Binding var redoTrigger: Int
+    @Binding var templateGrid: PixelGrid?
     var canvasView: PixelCanvasUIView?
     @State private var showExportMenu = false
 
@@ -14,8 +15,14 @@ struct TopBarView: View {
             // Grid size picker
             Menu {
                 ForEach(sizes, id: \.self) { size in
-                    Button("\(size)×\(size)") {
-                        gridSize = size
+                    Menu("\(size)×\(size)") {
+                        Button("Blank") {
+                            gridSize = size
+                        }
+                        Button("Character Template") {
+                            templateGrid = CharacterTemplates.template(for: size)
+                            gridSize = size
+                        }
                     }
                 }
             } label: {
