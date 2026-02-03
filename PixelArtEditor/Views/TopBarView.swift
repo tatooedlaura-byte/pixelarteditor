@@ -213,14 +213,14 @@ struct TopBarView: View {
             Button("Create") {
                 let w = Int(customWidthText) ?? gridWidth
                 let h = Int(customHeightText) ?? gridHeight
-                let clampedW = max(4, min(w, 128))
-                let clampedH = max(4, min(h, 128))
+                let clampedW = max(4, min(w, 512))
+                let clampedH = max(4, min(h, 512))
                 gridWidth = clampedW
                 gridHeight = clampedH
                 newProject()
             }
         } message: {
-            Text("Enter width and height (4–128).")
+            Text("Enter width and height (4–512).")
         }
         .alert("Close Project?", isPresented: $showCloseConfirm) {
             Button("Save & Close") {
