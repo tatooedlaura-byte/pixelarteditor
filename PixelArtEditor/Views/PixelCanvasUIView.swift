@@ -19,6 +19,10 @@ class PixelCanvasUIView: UIView {
     var shapeFilled: Bool = false
     var onionSkinGrid: PixelGrid?
 
+    // Reference image (for tracing)
+    var referenceImage: UIImage?
+    var referenceOpacity: CGFloat = 0.3
+
     // Transform state
     private var canvasScale: CGFloat = 1.0
     private var canvasOffset: CGPoint = .zero
@@ -222,6 +226,14 @@ class PixelCanvasUIView: UIView {
         checkerPattern?.setFill()
         ctx.fill(gridRect)
         ctx.restoreGState()
+
+        // Reference image (for tracing)
+        if let refImage = referenceImage {
+            ctx.saveGState()
+            ctx.setAlpha(referenceOpacity)
+            refImage.draw(in: gridRect)
+            ctx.restoreGState()
+        }
 
         // Onion skin
         if let onion = onionSkinGrid {

@@ -46,7 +46,7 @@ enum Tool: String, CaseIterable, Identifiable {
         switch self {
         case .pencil: return "pencil"
         case .eraser: return "eraser"
-        case .fill: return "drop.fill"
+        case .fill: return "paintbrush.pointed.fill"
         case .eyedropper: return "eyedropper"
         case .shape: return "square.on.circle"
         }

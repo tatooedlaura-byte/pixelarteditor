@@ -1,5 +1,6 @@
 import SwiftUI
 import UniformTypeIdentifiers
+import PhotosUI
 
 struct TopBarView: View {
     @Binding var gridWidth: Int
@@ -22,6 +23,12 @@ struct TopBarView: View {
     @State private var customWidthText = ""
     @State private var customHeightText = ""
     @State private var showCloseConfirm = false
+    @State private var showPhotoPicker = false
+    @State private var selectedPhotoItem: PhotosPickerItem?
+    @State private var referenceImage: UIImage?
+    @State private var referenceOpacity: Double = 0.3
+    @State private var pendingReferenceImage: UIImage?
+    @State private var showReferenceSizeSheet = false
 
     private let sizes = [8, 16, 32, 64]
 
@@ -133,6 +140,50 @@ struct TopBarView: View {
                 .cornerRadius(8)
             }
 
+            // Reference image menu
+            Menu {
+                Button {
+                    showPhotoPicker = true
+                } label: {
+                    Label("Import Reference…", systemImage: "photo")
+                }
+                if referenceImage != nil {
+                    Divider()
+                    Menu("Opacity") {
+                        Button("10%") { setReferenceOpacity(0.1) }
+                        Button("20%") { setReferenceOpacity(0.2) }
+                        Button("30%") { setReferenceOpacity(0.3) }
+                        Button("40%") { setReferenceOpacity(0.4) }
+                        Button("50%") { setReferenceOpacity(0.5) }
+                    }
+                    Divider()
+                    Button(role: .destructive) {
+                        referenceImage = nil
+                        canvasStore.canvasView?.referenceImage = nil
+                        canvasStore.canvasView?.setNeedsDisplay()
+                    } label: {
+                        Label("Remove Reference", systemImage: "trash")
+                    }
+                }
+            } label: {
+                HStack(spacing: 4) {
+                    Image(systemName: referenceImage != nil ? "photo.fill" : "photo")
+                    Text("Ref")
+                        .font(.subheadline)
+                }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+                .background(referenceImage != nil ? Color.accentColor.opacity(0.2) : Color(.systemGray5))
+                .cornerRadius(8)
+            }
+
+            Spacer()
+
+            // Project name
+            Text(currentProjectName.isEmpty ? "Untitled" : currentProjectName)
+                .font(.headline)
+                .foregroundColor(currentProjectName.isEmpty ? .secondary : .primary)
+
             Spacer()
 
             // Zoom
@@ -240,14 +291,61 @@ struct TopBarView: View {
         } message: {
             Text("Do you want to save before closing?")
         }
+        .photosPicker(isPresented: $showPhotoPicker, selection: $selectedPhotoItem, matching: .images)
+        .onChange(of: selectedPhotoItem) { newItem in
+            Task {
+                if let data = try? await newItem?.loadTransferable(type: Data.self),
+                   let image = UIImage(data: data) {
+                    pendingReferenceImage = image
+                    showReferenceSizeSheet = true
+                }
+            }
+        }
+        .sheet(isPresented: $showReferenceSizeSheet) {
+            ReferenceSizePickerView(
+                image: pendingReferenceImage,
+                onSelect: { width, height in
+                    showReferenceSizeSheet = false
+                    guard let image = pendingReferenceImage else { return }
+
+                    // Update grid size
+                    gridWidth = width
+                    gridHeight = height
+                    animationStore.initialize(width: width, height: height)
+                    if let cv = canvasStore.canvasView {
+                        cv.changeGridSize(width: width, height: height)
+                        animationStore.loadFrameToCanvas(cv, index: 0)
+                    }
+
+                    // Apply reference image
+                    referenceImage = image
+                    canvasStore.canvasView?.referenceImage = image
+                    canvasStore.canvasView?.referenceOpacity = referenceOpacity
+                    canvasStore.canvasView?.setNeedsDisplay()
+                    pendingReferenceImage = nil
+                },
+                onCancel: {
+                    showReferenceSizeSheet = false
+                    pendingReferenceImage = nil
+                }
+            )
+        }
+    }
+
+    private func setReferenceOpacity(_ opacity: Double) {
+        referenceOpacity = opacity
+        canvasStore.canvasView?.referenceOpacity = opacity
+        canvasStore.canvasView?.setNeedsDisplay()
     }
 
     private func closeProject() {
         currentProjectName = ""
         gridWidth = 16
         gridHeight = 16
+        referenceImage = nil
         animationStore.initialize(width: gridWidth, height: gridHeight)
         if let cv = canvasStore.canvasView {
+            cv.referenceImage = nil
             cv.changeGridSize(width: gridWidth, height: gridHeight)
             animationStore.loadFrameToCanvas(cv, index: 0)
         }
@@ -255,8 +353,10 @@ struct TopBarView: View {
 
     private func newProject() {
         currentProjectName = ""
+        referenceImage = nil
         animationStore.initialize(width: gridWidth, height: gridHeight)
         if let cv = canvasStore.canvasView {
+            cv.referenceImage = nil
             cv.changeGridSize(width: gridWidth, height: gridHeight)
             animationStore.loadFrameToCanvas(cv, index: 0)
         }
@@ -404,6 +504,89 @@ struct SavedProjectsView: View {
         }
         .onAppear {
             projects = ProjectFileManager.listProjects()
+        }
+    }
+}
+
+struct ReferenceSizePickerView: View {
+    let image: UIImage?
+    let onSelect: (Int, Int) -> Void
+    let onCancel: () -> Void
+
+    private var aspectRatio: CGFloat {
+        guard let image = image else { return 1.0 }
+        return image.size.width / image.size.height
+    }
+
+    private var sizeOptions: [(width: Int, height: Int, label: String)] {
+        let baseSizes = [16, 32, 48, 64, 96, 128]
+        var options: [(Int, Int, String)] = []
+
+        for base in baseSizes {
+            let width: Int
+            let height: Int
+
+            if aspectRatio >= 1.0 {
+                // Landscape or square
+                width = base
+                height = max(4, Int(round(CGFloat(base) / aspectRatio)))
+            } else {
+                // Portrait
+                height = base
+                width = max(4, Int(round(CGFloat(base) * aspectRatio)))
+            }
+
+            options.append((width, height, "\(width) × \(height)"))
+        }
+
+        return options
+    }
+
+    var body: some View {
+        NavigationView {
+            VStack(spacing: 20) {
+                if let image = image {
+                    Image(uiImage: image)
+                        .resizable()
+                        .aspectRatio(contentMode: .fit)
+                        .frame(maxHeight: 200)
+                        .cornerRadius(8)
+                        .padding()
+                }
+
+                Text("Choose Canvas Size")
+                    .font(.headline)
+
+                Text("Sizes matched to image aspect ratio")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 100))], spacing: 12) {
+                    ForEach(sizeOptions, id: \.label) { option in
+                        Button {
+                            onSelect(option.width, option.height)
+                        } label: {
+                            Text(option.label)
+                                .font(.body.monospacedDigit())
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 12)
+                                .background(Color(.systemGray5))
+                                .cornerRadius(8)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .padding(.horizontal)
+
+                Spacer()
+            }
+            .navigationTitle("Reference Image")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { onCancel() }
+                }
+            }
         }
     }
 }
