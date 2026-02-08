@@ -458,8 +458,9 @@
 				CODE_SIGN_STYLE = Automatic;
 				DEVELOPMENT_TEAM = 5824UP464U;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription = "Save your pixel art to Photos";
-				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "Save your pixel art to Photos";
+				INFOPLIST_KEY_CFBundleDisplayName = "Inkling Art";
+				INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription = "Save your art to Photos";
+				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "Save your art to Photos";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -468,7 +469,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.pixelart.editor;
+				PRODUCT_BUNDLE_IDENTIFIER = com.inklingart.app;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
 				SUPPORTS_MACCATALYST = NO;
@@ -485,8 +486,9 @@
 				CODE_SIGN_STYLE = Automatic;
 				DEVELOPMENT_TEAM = 5824UP464U;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription = "Save your pixel art to Photos";
-				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "Save your pixel art to Photos";
+				INFOPLIST_KEY_CFBundleDisplayName = "Inkling Art";
+				INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription = "Save your art to Photos";
+				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "Save your art to Photos";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -495,7 +497,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.pixelart.editor;
+				PRODUCT_BUNDLE_IDENTIFIER = com.inklingart.app;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
 				SUPPORTS_MACCATALYST = NO;
