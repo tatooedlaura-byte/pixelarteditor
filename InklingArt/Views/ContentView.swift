@@ -20,6 +20,7 @@ struct ContentView: View {
     @State private var layers: [DrawingLayer] = [DrawingLayer(name: "Layer 1")]
     @State private var activeLayerIndex: Int = 0
     @State private var showLayerPanel: Bool = false
+    @State private var shapeRecognitionEnabled: Bool = false
     @State private var layerUpdateTrigger: Int = 0
 
     var body: some View {
@@ -35,6 +36,12 @@ struct ContentView: View {
                 referenceImage: $referenceImage,
                 referenceOpacity: $referenceOpacity,
                 showLayerPanel: $showLayerPanel,
+                shapeRecognitionEnabled: $shapeRecognitionEnabled,
+                onResetLayers: {
+                    layers = [DrawingLayer(name: "Layer 1")]
+                    activeLayerIndex = 0
+                    layerUpdateTrigger += 1
+                },
                 canvasStore: canvasStore,
                 animationStore: animationStore
             )
@@ -71,6 +78,7 @@ struct ContentView: View {
                         redoTrigger: $redoTrigger,
                         referenceImage: $referenceImage,
                         referenceOpacity: $referenceOpacity,
+                        shapeRecognitionEnabled: shapeRecognitionEnabled,
                         canvasStore: canvasStore,
                         animationStore: animationStore,
                         layers: layers,
@@ -94,7 +102,8 @@ struct ContentView: View {
                 // Floating toolbar on the left
                 ToolbarView(selectedTool: $currentTool,
                            selectedShapeKind: $currentShapeKind,
-                           shapeFilled: $shapeFilled)
+                           shapeFilled: $shapeFilled,
+                           canvasMode: canvasMode)
                     .padding(.leading, 12)
 
                 // Layer panel on the right (smooth mode only)

@@ -13,6 +13,8 @@ struct TopBarView: View {
     @Binding var referenceImage: UIImage?
     @Binding var referenceOpacity: CGFloat
     @Binding var showLayerPanel: Bool
+    @Binding var shapeRecognitionEnabled: Bool
+    var onResetLayers: (() -> Void)?
     @ObservedObject var canvasStore: CanvasStore
     @ObservedObject var animationStore: AnimationStore
     @State private var showExportMenu = false
@@ -220,6 +222,22 @@ struct TopBarView: View {
                     .padding(.horizontal, 10)
                     .padding(.vertical, 6)
                     .background(showLayerPanel ? Color.accentColor.opacity(0.2) : Color(.systemGray5))
+                    .cornerRadius(8)
+                }
+
+                // Snap (shape recognition) toggle
+                Button {
+                    shapeRecognitionEnabled.toggle()
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: shapeRecognitionEnabled ? "hand.draw.fill" : "hand.draw")
+                        Text("Snap")
+                            .font(.subheadline.bold())
+                    }
+                    .foregroundColor(shapeRecognitionEnabled ? .white : .primary)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 6)
+                    .background(shapeRecognitionEnabled ? Color.green : Color(.systemGray5))
                     .cornerRadius(8)
                 }
             }
@@ -445,6 +463,8 @@ struct TopBarView: View {
             cv.changeGridSize(width: gridWidth, height: gridHeight)
             animationStore.loadFrameToCanvas(cv, index: 0)
         }
+        canvasStore.smoothCanvasView?.clearCanvas()
+        onResetLayers?()
     }
 
     private func newProject() {
@@ -456,6 +476,8 @@ struct TopBarView: View {
             cv.changeGridSize(width: gridWidth, height: gridHeight)
             animationStore.loadFrameToCanvas(cv, index: 0)
         }
+        canvasStore.smoothCanvasView?.clearCanvas()
+        onResetLayers?()
     }
 
     private func saveProject() {

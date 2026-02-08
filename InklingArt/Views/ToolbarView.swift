@@ -1,15 +1,20 @@
 import SwiftUI
+import Foundation
 
 struct ToolbarView: View {
     @Binding var selectedTool: Tool
     @Binding var selectedShapeKind: ShapeKind
     @Binding var shapeFilled: Bool
+    var canvasMode: CanvasMode = .pixel
     @State private var showShapePicker = false
 
     var body: some View {
         VStack(spacing: 8) {
             ForEach(Tool.allCases) { tool in
-                if tool == .shape {
+                // Hide fill tool in smooth mode
+                if tool == .fill && canvasMode == .smooth {
+                    EmptyView()
+                } else if tool == .shape {
                     shapeButton
                 } else {
                     Button {

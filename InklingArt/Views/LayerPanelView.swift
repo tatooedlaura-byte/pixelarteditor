@@ -52,17 +52,6 @@ struct LayerPanelView: View {
 
             Spacer()
 
-            // Mirror toggle
-            Button {
-                layers[index].isMirror.toggle()
-                onLayerChanged?()
-            } label: {
-                Image(systemName: "arrow.left.and.right")
-                    .font(.caption)
-                    .foregroundColor(layer.isMirror ? .accentColor : .secondary)
-            }
-            .buttonStyle(.plain)
-
             // Visibility toggle
             Button {
                 layers[index].isVisible.toggle()

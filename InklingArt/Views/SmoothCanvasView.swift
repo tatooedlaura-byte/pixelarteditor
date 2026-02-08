@@ -11,6 +11,7 @@ struct SmoothCanvasView: UIViewRepresentable {
     @Binding var redoTrigger: Int
     @Binding var referenceImage: UIImage?
     @Binding var referenceOpacity: CGFloat
+    var shapeRecognitionEnabled: Bool
     var canvasStore: CanvasStore
     var animationStore: AnimationStore
     var layers: [DrawingLayer]
@@ -28,9 +29,9 @@ struct SmoothCanvasView: UIViewRepresentable {
         view.brushWidth = brushWidth
         view.referenceImage = referenceImage
         view.referenceOpacity = referenceOpacity
+        view.shapeRecognitionEnabled = shapeRecognitionEnabled
 
         if activeLayerIndex < layers.count {
-            view.mirrorEnabled = layers[activeLayerIndex].isMirror
             view.drawing = layers[activeLayerIndex].drawing
         }
 
@@ -53,6 +54,7 @@ struct SmoothCanvasView: UIViewRepresentable {
         uiView.brushWidth = brushWidth
         uiView.referenceImage = referenceImage
         uiView.referenceOpacity = referenceOpacity
+        uiView.shapeRecognitionEnabled = shapeRecognitionEnabled
         context.coordinator.onPickColor = onPickColor
         context.coordinator.onCanvasChanged = onCanvasChanged
 
@@ -74,11 +76,6 @@ struct SmoothCanvasView: UIViewRepresentable {
 
         context.coordinator.layers = layers
         context.coordinator.activeLayerIndex = activeLayerIndex
-
-        // Update mirror state
-        if activeLayerIndex < layers.count {
-            uiView.mirrorEnabled = layers[activeLayerIndex].isMirror
-        }
 
         // Update layer composites
         uiView.updateLayerComposites(layers: layers, activeIndex: activeLayerIndex)

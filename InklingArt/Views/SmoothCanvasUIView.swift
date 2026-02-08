@@ -29,7 +29,6 @@ class SmoothCanvasUIView: UIView, PKCanvasViewDelegate, UIScrollViewDelegate {
     private var isMovingShape = false
     private var lastPanLocation: CGPoint?
     private var eyedropperTapGesture: UITapGestureRecognizer!
-    private var fillTapGesture: UITapGestureRecognizer!
 
     // Selection tool state
     private var selectionPanGesture: UIPanGestureRecognizer!
@@ -52,19 +51,25 @@ class SmoothCanvasUIView: UIView, PKCanvasViewDelegate, UIScrollViewDelegate {
     private let belowLayersImageView = UIImageView()
     private let aboveLayersImageView = UIImageView()
 
-    // Mirror drawing
-    var mirrorEnabled: Bool = false {
-        didSet { updateMirrorGuide() }
-    }
-    private let mirrorGuideLayer = CAShapeLayer()
-    private var isProcessingMirror = false
-    private var lastStrokeCount = 0
+    // Shape recognition
+    var shapeRecognitionEnabled: Bool = false
+    private var recognizedShape: RecognizedShape?
+    private var recognizedShapePendingCommit = false
+    private var isResizingShape = false
+    private var activeResizeHandle: ResizeHandle?
+    private var resizeAnchorPoint: CGPoint?
+    private var resizeOriginalRect: CGRect?
+    private var recognizedShapeRect: CGRect?
+    private let resizeHandleLayer = ResizeHandleLayer()
+    private var recognizedShapePanGesture: UIPanGestureRecognizer!
+    private var recognizedShapeTapGesture: UITapGestureRecognizer!
+    private var lastRecognizedStrokeCount = 0
+    private var drawingBeforeRecognition: PKDrawing?
 
     var drawing: PKDrawing {
         get { pkCanvasView.drawing }
         set {
             pkCanvasView.drawing = newValue
-            lastStrokeCount = newValue.strokes.count
         }
     }
 
@@ -92,6 +97,9 @@ class SmoothCanvasUIView: UIView, PKCanvasViewDelegate, UIScrollViewDelegate {
             }
             if hasActiveSelection {
                 clearSelection()
+            }
+            if recognizedShapePendingCommit {
+                commitRecognizedShape()
             }
             updateTool()
             shapePreviewLayer.path = nil
@@ -171,15 +179,6 @@ class SmoothCanvasUIView: UIView, PKCanvasViewDelegate, UIScrollViewDelegate {
         shapePreviewLayer.frame = CGRect(x: 0, y: 0, width: canvasSize, height: canvasSize)
         contentView.layer.addSublayer(shapePreviewLayer)
 
-        // Mirror guide line (dashed red vertical center line)
-        mirrorGuideLayer.strokeColor = UIColor.systemRed.cgColor
-        mirrorGuideLayer.lineWidth = 1.5
-        mirrorGuideLayer.lineDashPattern = [6, 4]
-        mirrorGuideLayer.fillColor = nil
-        mirrorGuideLayer.isHidden = true
-        mirrorGuideLayer.frame = CGRect(x: 0, y: 0, width: canvasSize, height: canvasSize)
-        contentView.layer.addSublayer(mirrorGuideLayer)
-
         // Selection preview layer
         selectionPreviewLayer.strokeColor = UIColor.systemBlue.cgColor
         selectionPreviewLayer.lineWidth = 2
@@ -204,11 +203,6 @@ class SmoothCanvasUIView: UIView, PKCanvasViewDelegate, UIScrollViewDelegate {
         eyedropperTapGesture.isEnabled = false
         scrollView.addGestureRecognizer(eyedropperTapGesture)
 
-        // Fill tap gesture
-        fillTapGesture = UITapGestureRecognizer(target: self, action: #selector(handleFillTap(_:)))
-        fillTapGesture.isEnabled = false
-        scrollView.addGestureRecognizer(fillTapGesture)
-
         // Selection pan gesture
         selectionPanGesture = UIPanGestureRecognizer(target: self, action: #selector(handleSelectionPan(_:)))
         selectionPanGesture.isEnabled = false
@@ -219,6 +213,21 @@ class SmoothCanvasUIView: UIView, PKCanvasViewDelegate, UIScrollViewDelegate {
         selectionTapGesture = UITapGestureRecognizer(target: self, action: #selector(handleSelectionTap(_:)))
         selectionTapGesture.isEnabled = false
         scrollView.addGestureRecognizer(selectionTapGesture)
+
+        // Resize handle layer (for shape recognition)
+        resizeHandleLayer.frame = CGRect(x: 0, y: 0, width: canvasSize, height: canvasSize)
+        resizeHandleLayer.isHidden = true
+        contentView.layer.addSublayer(resizeHandleLayer)
+
+        // Shape recognition gestures (disabled by default)
+        recognizedShapePanGesture = UIPanGestureRecognizer(target: self, action: #selector(handleRecognizedShapePan(_:)))
+        recognizedShapePanGesture.isEnabled = false
+        recognizedShapePanGesture.maximumNumberOfTouches = 1
+        scrollView.addGestureRecognizer(recognizedShapePanGesture)
+
+        recognizedShapeTapGesture = UITapGestureRecognizer(target: self, action: #selector(handleRecognizedShapeTap(_:)))
+        recognizedShapeTapGesture.isEnabled = false
+        scrollView.addGestureRecognizer(recognizedShapeTapGesture)
 
         // Flip button
         flipButton = UIButton(type: .system)
@@ -344,7 +353,6 @@ class SmoothCanvasUIView: UIView, PKCanvasViewDelegate, UIScrollViewDelegate {
             shapePanGesture.isEnabled = false
             shapeConfirmTapGesture.isEnabled = false
             eyedropperTapGesture.isEnabled = false
-            fillTapGesture.isEnabled = false
             selectionPanGesture.isEnabled = false
             selectionTapGesture.isEnabled = false
 
@@ -356,18 +364,17 @@ class SmoothCanvasUIView: UIView, PKCanvasViewDelegate, UIScrollViewDelegate {
             shapePanGesture.isEnabled = false
             shapeConfirmTapGesture.isEnabled = false
             eyedropperTapGesture.isEnabled = false
-            fillTapGesture.isEnabled = false
             selectionPanGesture.isEnabled = false
             selectionTapGesture.isEnabled = false
 
         case .fill:
+            // Fill not supported in smooth mode (only pixel mode)
             pkCanvasView.isUserInteractionEnabled = false
             scrollView.isScrollEnabled = true
             scrollView.pinchGestureRecognizer?.isEnabled = true
             shapePanGesture.isEnabled = false
             shapeConfirmTapGesture.isEnabled = false
             eyedropperTapGesture.isEnabled = false
-            fillTapGesture.isEnabled = true
             selectionPanGesture.isEnabled = false
             selectionTapGesture.isEnabled = false
 
@@ -378,7 +385,6 @@ class SmoothCanvasUIView: UIView, PKCanvasViewDelegate, UIScrollViewDelegate {
             shapePanGesture.isEnabled = false
             shapeConfirmTapGesture.isEnabled = false
             eyedropperTapGesture.isEnabled = true
-            fillTapGesture.isEnabled = false
             selectionPanGesture.isEnabled = false
             selectionTapGesture.isEnabled = false
 
@@ -389,7 +395,6 @@ class SmoothCanvasUIView: UIView, PKCanvasViewDelegate, UIScrollViewDelegate {
             shapePanGesture.isEnabled = true
             shapeConfirmTapGesture.isEnabled = true
             eyedropperTapGesture.isEnabled = false
-            fillTapGesture.isEnabled = false
             selectionPanGesture.isEnabled = false
             selectionTapGesture.isEnabled = false
 
@@ -400,7 +405,6 @@ class SmoothCanvasUIView: UIView, PKCanvasViewDelegate, UIScrollViewDelegate {
             shapePanGesture.isEnabled = false
             shapeConfirmTapGesture.isEnabled = false
             eyedropperTapGesture.isEnabled = false
-            fillTapGesture.isEnabled = false
             selectionPanGesture.isEnabled = true
             selectionTapGesture.isEnabled = true
         }
@@ -425,66 +429,6 @@ class SmoothCanvasUIView: UIView, PKCanvasViewDelegate, UIScrollViewDelegate {
         if let color = image.pixelColor(at: location) {
             delegate?.didPickColor(color)
         }
-    }
-
-    // MARK: - Fill Tool
-
-    @objc private func handleFillTap(_ gesture: UITapGestureRecognizer) {
-        // Fill creates a full-canvas rectangle with the current color
-        let rect = CGRect(origin: .zero, size: CGSize(width: canvasSize, height: canvasSize))
-
-        var strokePoints: [PKStrokePoint] = []
-        var time: Double = 0
-
-        func addPoint(_ point: CGPoint) {
-            let strokePoint = PKStrokePoint(
-                location: point,
-                timeOffset: time,
-                size: CGSize(width: 1, height: 1),
-                opacity: 1.0,
-                force: 1.0,
-                azimuth: 0,
-                altitude: .pi / 2
-            )
-            strokePoints.append(strokePoint)
-            time += 0.001
-        }
-
-        // Create a filled rectangle by drawing many horizontal lines
-        let step: CGFloat = 2
-        var y: CGFloat = 0
-        var goingRight = true
-
-        while y <= canvasSize {
-            if goingRight {
-                addPoint(CGPoint(x: 0, y: y))
-                addPoint(CGPoint(x: canvasSize, y: y))
-            } else {
-                addPoint(CGPoint(x: canvasSize, y: y))
-                addPoint(CGPoint(x: 0, y: y))
-            }
-            y += step
-            goingRight.toggle()
-        }
-
-        guard strokePoints.count >= 2 else { return }
-
-        let ink: PKInk
-        if #available(iOS 17.0, *) {
-            ink = PKInk(.monoline, color: currentColor)
-        } else {
-            ink = PKInk(.marker, color: currentColor)
-        }
-
-        let strokePath = PKStrokePath(controlPoints: strokePoints, creationDate: Date())
-        let stroke = PKStroke(ink: ink, path: strokePath)
-
-        var newDrawing = pkCanvasView.drawing
-        // Insert at beginning so it's behind other strokes
-        newDrawing.strokes.insert(stroke, at: 0)
-        setDrawingWithUndo(newDrawing)
-
-        delegate?.canvasDidChange()
     }
 
     // MARK: - Shape Tool
@@ -757,13 +701,7 @@ class SmoothCanvasUIView: UIView, PKCanvasViewDelegate, UIScrollViewDelegate {
 
         var newDrawing = pkCanvasView.drawing
         newDrawing.strokes.append(stroke)
-        if mirrorEnabled, let mirrored = mirrorStroke(stroke) {
-            newDrawing.strokes.append(mirrored)
-        }
-        isProcessingMirror = true
         setDrawingWithUndo(newDrawing)
-        lastStrokeCount = newDrawing.strokes.count
-        isProcessingMirror = false
 
         delegate?.canvasDidChange()
     }
@@ -1047,6 +985,16 @@ class SmoothCanvasUIView: UIView, PKCanvasViewDelegate, UIScrollViewDelegate {
             shapeEndPoint = nil
             return
         }
+        if recognizedShapePendingCommit {
+            // Cancel recognition — restore the raw stroke
+            if let saved = drawingBeforeRecognition {
+                pkCanvasView.drawing = saved
+                drawingBeforeRecognition = nil
+            }
+            exitRecognizedShapeMode()
+            delegate?.canvasDidChange()
+            return
+        }
         pkCanvasView.undoManager?.undo()
     }
 
@@ -1073,82 +1021,360 @@ class SmoothCanvasUIView: UIView, PKCanvasViewDelegate, UIScrollViewDelegate {
     // MARK: - PKCanvasViewDelegate
 
     func canvasViewDrawingDidChange(_ canvasView: PKCanvasView) {
-        guard !isProcessingMirror else { return }
-
-        if mirrorEnabled {
-            let currentCount = canvasView.drawing.strokes.count
-            if currentCount > lastStrokeCount {
-                let newStrokes = Array(canvasView.drawing.strokes[lastStrokeCount..<currentCount])
-                var mirroredStrokes: [PKStroke] = []
-                for stroke in newStrokes {
-                    if let mirrored = mirrorStroke(stroke) {
-                        mirroredStrokes.append(mirrored)
-                    }
-                }
-                if !mirroredStrokes.isEmpty {
-                    isProcessingMirror = true
-                    var newDrawing = canvasView.drawing
-                    for s in mirroredStrokes {
-                        newDrawing.strokes.append(s)
-                    }
-                    setDrawingWithUndo(newDrawing)
-                    lastStrokeCount = newDrawing.strokes.count
-                    isProcessingMirror = false
-                } else {
-                    lastStrokeCount = currentCount
-                }
-            } else {
-                lastStrokeCount = currentCount
-            }
-        } else {
-            lastStrokeCount = canvasView.drawing.strokes.count
+        if shapeRecognitionEnabled && currentTool == .pencil && !recognizedShapePendingCommit {
+            attemptShapeRecognition(canvasView)
         }
-
         delegate?.canvasDidChange()
     }
 
-    // MARK: - Mirror Drawing
+    // MARK: - Shape Recognition
 
-    private func mirrorStroke(_ stroke: PKStroke) -> PKStroke? {
-        let midX = canvasSize / 2
-        var flippedPoints: [PKStrokePoint] = []
-        for point in stroke.path {
-            let flippedX = 2 * midX - point.location.x
-            let flippedLocation = CGPoint(x: flippedX, y: point.location.y)
-            let flippedPoint = PKStrokePoint(
-                location: flippedLocation,
-                timeOffset: point.timeOffset,
-                size: point.size,
-                opacity: point.opacity,
-                force: point.force,
-                azimuth: point.azimuth,
-                altitude: point.altitude
-            )
-            flippedPoints.append(flippedPoint)
+    private func attemptShapeRecognition(_ canvasView: PKCanvasView) {
+        let currentCount = canvasView.drawing.strokes.count
+        guard currentCount > lastRecognizedStrokeCount else {
+            lastRecognizedStrokeCount = currentCount
+            return
         }
-        guard flippedPoints.count >= 2 else { return nil }
-        let newPath = PKStrokePath(controlPoints: flippedPoints, creationDate: Date())
-        return PKStroke(ink: stroke.ink, path: newPath)
+
+        // Get the last stroke
+        let lastStroke = canvasView.drawing.strokes[currentCount - 1]
+        lastRecognizedStrokeCount = currentCount
+
+        // Extract points from the stroke
+        var points: [CGPoint] = []
+        for point in lastStroke.path {
+            points.append(point.location)
+        }
+
+        guard let shape = ShapeRecognizer.recognize(points: points) else { return }
+
+        // Save drawing before removing the raw stroke
+        drawingBeforeRecognition = canvasView.drawing
+
+        // Remove the raw stroke
+        var newDrawing = canvasView.drawing
+        newDrawing.strokes.removeLast()
+        pkCanvasView.drawing = newDrawing
+
+        // Store recognized shape and enter recognition mode
+        recognizedShape = shape
+        recognizedShapeRect = shape.boundingRect
+        recognizedShapePendingCommit = true
+
+        showRecognizedShapePreview()
+        enterRecognizedShapeMode()
     }
 
-    private func updateMirrorGuide() {
-        if mirrorEnabled {
-            let midX = canvasSize / 2
-            let path = UIBezierPath()
-            path.move(to: CGPoint(x: midX, y: 0))
-            path.addLine(to: CGPoint(x: midX, y: canvasSize))
-            mirrorGuideLayer.path = path.cgPath
-            mirrorGuideLayer.isHidden = false
-        } else {
-            mirrorGuideLayer.isHidden = true
+    private func showRecognizedShapePreview() {
+        guard let shape = recognizedShape, let rect = recognizedShapeRect else { return }
+
+        let path: UIBezierPath
+
+        switch shape.kind {
+        case .line:
+            path = UIBezierPath()
+            if let start = shape.lineStart, let end = shape.lineEnd {
+                let origRect = shape.boundingRect
+                let scaleX = origRect.width > 1 ? rect.width / origRect.width : 1
+                let scaleY = origRect.height > 1 ? rect.height / origRect.height : 1
+                let newStart = CGPoint(
+                    x: rect.origin.x + (start.x - origRect.origin.x) * scaleX,
+                    y: rect.origin.y + (start.y - origRect.origin.y) * scaleY
+                )
+                let newEnd = CGPoint(
+                    x: rect.origin.x + (end.x - origRect.origin.x) * scaleX,
+                    y: rect.origin.y + (end.y - origRect.origin.y) * scaleY
+                )
+                path.move(to: newStart)
+                path.addLine(to: newEnd)
+            }
+
+        case .circle:
+            path = UIBezierPath(ovalIn: rect)
+
+        case .rectangle:
+            path = UIBezierPath(rect: rect)
+
+        case .arc:
+            path = UIBezierPath()
+            if let center = shape.arcCenter, let radius = shape.arcRadius,
+               let startAngle = shape.arcStartAngle, let endAngle = shape.arcEndAngle,
+               let clockwise = shape.arcClockwise {
+                let origRect = shape.boundingRect
+                let scaleX = origRect.width > 1 ? rect.width / origRect.width : 1
+                let scaleY = origRect.height > 1 ? rect.height / origRect.height : 1
+                let newCenter = CGPoint(
+                    x: rect.origin.x + (center.x - origRect.origin.x) * scaleX,
+                    y: rect.origin.y + (center.y - origRect.origin.y) * scaleY
+                )
+                let newRadius = radius * max(scaleX, scaleY)
+                path.addArc(withCenter: newCenter, radius: newRadius,
+                            startAngle: startAngle, endAngle: endAngle, clockwise: !clockwise)
+            }
+
+        case .triangle:
+            path = UIBezierPath()
+            if let verts = shape.triangleVertices, verts.count == 3 {
+                let origRect = shape.boundingRect
+                let scaleX = origRect.width > 1 ? rect.width / origRect.width : 1
+                let scaleY = origRect.height > 1 ? rect.height / origRect.height : 1
+                let scaled = verts.map { v in
+                    CGPoint(
+                        x: rect.origin.x + (v.x - origRect.origin.x) * scaleX,
+                        y: rect.origin.y + (v.y - origRect.origin.y) * scaleY
+                    )
+                }
+                path.move(to: scaled[0])
+                path.addLine(to: scaled[1])
+                path.addLine(to: scaled[2])
+                path.close()
+            }
         }
+
+        shapePreviewLayer.strokeColor = currentColor.cgColor
+        shapePreviewLayer.lineWidth = brushWidth
+        shapePreviewLayer.fillColor = nil
+        shapePreviewLayer.path = path.cgPath
+
+        resizeHandleLayer.update(for: rect)
+    }
+
+    private func enterRecognizedShapeMode() {
+        pkCanvasView.isUserInteractionEnabled = false
+        scrollView.isScrollEnabled = false
+        scrollView.pinchGestureRecognizer?.isEnabled = false
+        recognizedShapePanGesture.isEnabled = true
+        recognizedShapeTapGesture.isEnabled = true
+    }
+
+    private func exitRecognizedShapeMode() {
+        recognizedShape = nil
+        recognizedShapeRect = nil
+        recognizedShapePendingCommit = false
+        isResizingShape = false
+        activeResizeHandle = nil
+        resizeAnchorPoint = nil
+        resizeOriginalRect = nil
+        drawingBeforeRecognition = nil
+
+        shapePreviewLayer.path = nil
+        resizeHandleLayer.hide()
+
+        // Restore normal pencil mode
+        recognizedShapePanGesture.isEnabled = false
+        recognizedShapeTapGesture.isEnabled = false
+        pkCanvasView.isUserInteractionEnabled = true
+        scrollView.isScrollEnabled = true
+        scrollView.pinchGestureRecognizer?.isEnabled = true
+
+        lastRecognizedStrokeCount = pkCanvasView.drawing.strokes.count
+    }
+
+    @objc private func handleRecognizedShapePan(_ gesture: UIPanGestureRecognizer) {
+        let location = gesture.location(in: contentView)
+
+        switch gesture.state {
+        case .began:
+            guard let rect = recognizedShapeRect else { return }
+
+            // Hit-test resize handles first
+            if let handle = resizeHandleLayer.hitTestHandle(point: location) {
+                isResizingShape = true
+                activeResizeHandle = handle
+                resizeOriginalRect = rect
+                return
+            }
+
+            // Hit-test shape body
+            let bodyRect = rect.insetBy(dx: -30, dy: -30)
+            if bodyRect.contains(location) {
+                // Move mode
+                isResizingShape = false
+                lastPanLocation = location
+                return
+            }
+
+            // Outside — commit the shape
+            commitRecognizedShape()
+
+        case .changed:
+            if isResizingShape, let handle = activeResizeHandle, let origRect = resizeOriginalRect {
+                let newRect = ResizeHandleLayer.adjustedRect(original: origRect, dragging: handle, from: .zero, to: location)
+                recognizedShapeRect = newRect
+                showRecognizedShapePreview()
+            } else if let last = lastPanLocation, let rect = recognizedShapeRect {
+                let dx = location.x - last.x
+                let dy = location.y - last.y
+                recognizedShapeRect = rect.offsetBy(dx: dx, dy: dy)
+                lastPanLocation = location
+                showRecognizedShapePreview()
+            }
+
+        case .ended:
+            isResizingShape = false
+            activeResizeHandle = nil
+            resizeOriginalRect = nil
+            lastPanLocation = nil
+
+        case .cancelled, .failed:
+            isResizingShape = false
+            activeResizeHandle = nil
+            resizeOriginalRect = nil
+            lastPanLocation = nil
+
+        default:
+            break
+        }
+    }
+
+    @objc private func handleRecognizedShapeTap(_ gesture: UITapGestureRecognizer) {
+        guard recognizedShapePendingCommit else { return }
+        commitRecognizedShape()
+    }
+
+    private func commitRecognizedShape() {
+        guard let shape = recognizedShape, let rect = recognizedShapeRect else {
+            exitRecognizedShapeMode()
+            return
+        }
+
+        let ink: PKInk
+        if #available(iOS 17.0, *) {
+            ink = PKInk(.monoline, color: currentColor)
+        } else {
+            ink = PKInk(.marker, color: currentColor)
+        }
+
+        var strokePoints: [PKStrokePoint] = []
+        let pointSize = CGSize(width: brushWidth, height: brushWidth)
+
+        func addPoint(_ pt: CGPoint, time: Double) {
+            strokePoints.append(PKStrokePoint(location: pt, timeOffset: time, size: pointSize,
+                                               opacity: 1, force: 1, azimuth: 0, altitude: .pi / 2))
+        }
+
+        let origRect = shape.boundingRect
+        let scaleX = origRect.width > 1 ? rect.width / origRect.width : 1
+        let scaleY = origRect.height > 1 ? rect.height / origRect.height : 1
+
+        switch shape.kind {
+        case .line:
+            if let start = shape.lineStart, let end = shape.lineEnd {
+                let newStart = CGPoint(
+                    x: rect.origin.x + (start.x - origRect.origin.x) * scaleX,
+                    y: rect.origin.y + (start.y - origRect.origin.y) * scaleY
+                )
+                let newEnd = CGPoint(
+                    x: rect.origin.x + (end.x - origRect.origin.x) * scaleX,
+                    y: rect.origin.y + (end.y - origRect.origin.y) * scaleY
+                )
+                addPoint(newStart, time: 0)
+                addPoint(newEnd, time: 0.1)
+            }
+
+        case .circle:
+            let cx = rect.midX
+            let cy = rect.midY
+            let rx = rect.width / 2
+            let ry = rect.height / 2
+            let segments = 40
+            for i in 0...segments {
+                let angle = CGFloat(i) / CGFloat(segments) * 2 * .pi
+                let x = cx + rx * cos(angle)
+                let y = cy + ry * sin(angle)
+                addPoint(CGPoint(x: x, y: y), time: Double(i) * 0.01)
+            }
+
+        case .rectangle:
+            let pts = 20
+            var time: Double = 0
+            for i in 0...pts {
+                let t = CGFloat(i) / CGFloat(pts)
+                addPoint(CGPoint(x: rect.minX + rect.width * t, y: rect.minY), time: time)
+                time += 0.005
+            }
+            for i in 1...pts {
+                let t = CGFloat(i) / CGFloat(pts)
+                addPoint(CGPoint(x: rect.maxX, y: rect.minY + rect.height * t), time: time)
+                time += 0.005
+            }
+            for i in 1...pts {
+                let t = CGFloat(i) / CGFloat(pts)
+                addPoint(CGPoint(x: rect.maxX - rect.width * t, y: rect.maxY), time: time)
+                time += 0.005
+            }
+            for i in 1...pts {
+                let t = CGFloat(i) / CGFloat(pts)
+                addPoint(CGPoint(x: rect.minX, y: rect.maxY - rect.height * t), time: time)
+                time += 0.005
+            }
+
+        case .arc:
+            if let center = shape.arcCenter, let radius = shape.arcRadius,
+               let startAngle = shape.arcStartAngle, let endAngle = shape.arcEndAngle,
+               let clockwise = shape.arcClockwise {
+                let newCenter = CGPoint(
+                    x: rect.origin.x + (center.x - origRect.origin.x) * scaleX,
+                    y: rect.origin.y + (center.y - origRect.origin.y) * scaleY
+                )
+                let newRadius = radius * max(scaleX, scaleY)
+                var sweep = clockwise ? startAngle - endAngle : endAngle - startAngle
+                if sweep < 0 { sweep += 2 * .pi }
+                let segments = 30
+                for i in 0...segments {
+                    let t = CGFloat(i) / CGFloat(segments)
+                    let a = clockwise ? startAngle - t * sweep : startAngle + t * sweep
+                    let x = newCenter.x + newRadius * cos(a)
+                    let y = newCenter.y + newRadius * sin(a)
+                    addPoint(CGPoint(x: x, y: y), time: Double(i) * 0.01)
+                }
+            }
+
+        case .triangle:
+            if let verts = shape.triangleVertices, verts.count == 3 {
+                let scaled = verts.map { v in
+                    CGPoint(
+                        x: rect.origin.x + (v.x - origRect.origin.x) * scaleX,
+                        y: rect.origin.y + (v.y - origRect.origin.y) * scaleY
+                    )
+                }
+                let ptsPerEdge = 15
+                var time: Double = 0
+                for edge in 0..<3 {
+                    let p1 = scaled[edge]
+                    let p2 = scaled[(edge + 1) % 3]
+                    let startJ = edge == 0 ? 0 : 1
+                    for j in startJ...ptsPerEdge {
+                        let t = CGFloat(j) / CGFloat(ptsPerEdge)
+                        let x = p1.x + (p2.x - p1.x) * t
+                        let y = p1.y + (p2.y - p1.y) * t
+                        addPoint(CGPoint(x: x, y: y), time: time)
+                        time += 0.005
+                    }
+                }
+            }
+        }
+
+        guard strokePoints.count >= 2 else {
+            exitRecognizedShapeMode()
+            return
+        }
+
+        let strokePath = PKStrokePath(controlPoints: strokePoints, creationDate: Date())
+        let stroke = PKStroke(ink: ink, path: strokePath)
+
+        var newDrawing = pkCanvasView.drawing
+        newDrawing.strokes.append(stroke)
+        setDrawingWithUndo(newDrawing)
+
+        exitRecognizedShapeMode()
+        delegate?.canvasDidChange()
     }
 
     // MARK: - Layer Support
 
     func clearUndoHistory() {
         pkCanvasView.undoManager?.removeAllActions()
-        lastStrokeCount = pkCanvasView.drawing.strokes.count
     }
 
     func updateLayerComposites(layers: [DrawingLayer], activeIndex: Int) {
@@ -1191,7 +1417,6 @@ class SmoothCanvasUIView: UIView, PKCanvasViewDelegate, UIScrollViewDelegate {
 
     func clearCanvas() {
         pkCanvasView.drawing = PKDrawing()
-        lastStrokeCount = 0
     }
 
     func renderImage(scale: CGFloat = 1.0) -> UIImage? {
@@ -1246,10 +1471,9 @@ class SmoothCanvasUIView: UIView, PKCanvasViewDelegate, UIScrollViewDelegate {
         contentHeightConstraint?.constant = newSize
         shapePreviewLayer.frame = CGRect(x: 0, y: 0, width: newSize, height: newSize)
         selectionPreviewLayer.frame = CGRect(x: 0, y: 0, width: newSize, height: newSize)
-        mirrorGuideLayer.frame = CGRect(x: 0, y: 0, width: newSize, height: newSize)
+        resizeHandleLayer.frame = CGRect(x: 0, y: 0, width: newSize, height: newSize)
         scrollView.contentSize = CGSize(width: newSize, height: newSize)
         checkerboardView.backgroundColor = buildCheckerPattern()
-        updateMirrorGuide()
         layoutIfNeeded()
         centerContent()
     }

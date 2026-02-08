@@ -55,6 +55,8 @@
 		CB11A71750843E19C4E5918E /* SmoothCanvasView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1D322C0675EF65F8C84C7327 /* SmoothCanvasView.swift */; };
 		D793CB0474BCB659FEADDA5C /* CharacterTemplate.swift in Sources */ = {isa = PBXBuildFile; fileRef = C6A92423BFD09E9901ABF9FF /* CharacterTemplate.swift */; };
 		D93D20C05627E0C7BA87755E /* SmoothCanvasUIView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4FE085D9892579F686AA0AEE /* SmoothCanvasUIView.swift */; };
+		A1000019 /* ShapeRecognizer.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000019 /* ShapeRecognizer.swift */; };
+		A1000020 /* ResizeHandleLayer.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000020 /* ResizeHandleLayer.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -102,6 +104,8 @@
 		A2000016 /* ShapeRasterizer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShapeRasterizer.swift; sourceTree = "<group>"; };
 		A2000017 /* DrawingLayer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DrawingLayer.swift; sourceTree = "<group>"; };
 		A2000018 /* LayerPanelView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LayerPanelView.swift; sourceTree = "<group>"; };
+		A2000019 /* ShapeRecognizer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShapeRecognizer.swift; sourceTree = "<group>"; };
+		A2000020 /* ResizeHandleLayer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ResizeHandleLayer.swift; sourceTree = "<group>"; };
 		A3000001 /* InklingArt.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = InklingArt.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		A97827FDD49AF4320929D44A /* SmoothCanvasView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SmoothCanvasView.swift; sourceTree = "<group>"; };
 		B8D0FCFDC93E9B3D1B52510F /* VectorCanvas.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = VectorCanvas.swift; path = SmoothArtEditor/Models/VectorCanvas.swift; sourceTree = "<group>"; };
@@ -219,6 +223,7 @@
 				A2000018 /* LayerPanelView.swift */,
 				3535BD1F7F43AC93648B4158 /* SmoothCanvasUIView.swift */,
 				A97827FDD49AF4320929D44A /* SmoothCanvasView.swift */,
+				A2000020 /* ResizeHandleLayer.swift */,
 			);
 			path = Views;
 			sourceTree = "<group>";
@@ -232,6 +237,7 @@
 				A2000013 /* SpriteSheetExporter.swift */,
 				A2000015 /* ProjectFileManager.swift */,
 				A2000016 /* ShapeRasterizer.swift */,
+				A2000019 /* ShapeRecognizer.swift */,
 			);
 			path = Utils;
 			sourceTree = "<group>";
@@ -372,6 +378,8 @@
 				BC959A6BD21AFF6A7D9657E1 /* SmoothCanvasView.swift in Sources */,
 				8CC6FC8C9F54683B524C51BE /* VectorCanvas.swift in Sources */,
 				D793CB0474BCB659FEADDA5C /* CharacterTemplate.swift in Sources */,
+				A1000019 /* ShapeRecognizer.swift in Sources */,
+				A1000020 /* ResizeHandleLayer.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
