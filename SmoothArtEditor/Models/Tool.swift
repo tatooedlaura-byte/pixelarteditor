@@ -39,6 +39,7 @@ enum Tool: String, CaseIterable, Identifiable {
     case fill
     case eyedropper
     case shape
+    case select
 
     var id: String { rawValue }
 
@@ -49,6 +50,7 @@ enum Tool: String, CaseIterable, Identifiable {
         case .fill: return "paintbrush.pointed.fill"
         case .eyedropper: return "eyedropper"
         case .shape: return "square.on.circle"
+        case .select: return "rectangle.dashed"
         }
     }
 
@@ -59,6 +61,7 @@ enum Tool: String, CaseIterable, Identifiable {
         case .fill: return "Fill"
         case .eyedropper: return "Eyedropper"
         case .shape: return "Shape"
+        case .select: return "Select"
         }
     }
 }
