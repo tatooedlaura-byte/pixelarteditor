@@ -12,6 +12,7 @@ struct TopBarView: View {
     @Binding var templateGrid: PixelGrid?
     @Binding var referenceImage: UIImage?
     @Binding var referenceOpacity: CGFloat
+    @Binding var showLayerPanel: Bool
     @ObservedObject var canvasStore: CanvasStore
     @ObservedObject var animationStore: AnimationStore
     @State private var showExportMenu = false
@@ -206,6 +207,21 @@ struct TopBarView: View {
                 .padding(.vertical, 4)
                 .background(Color(.systemGray5))
                 .cornerRadius(8)
+
+                // Layers button
+                Button {
+                    showLayerPanel.toggle()
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "square.3.layers.3d")
+                        Text("Layers")
+                            .font(.subheadline)
+                    }
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 6)
+                    .background(showLayerPanel ? Color.accentColor.opacity(0.2) : Color(.systemGray5))
+                    .cornerRadius(8)
+                }
             }
 
             // Reference image menu

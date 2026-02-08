@@ -17,6 +17,10 @@ struct ContentView: View {
     @State private var referenceOpacity: CGFloat = 0.3
     @StateObject private var canvasStore = CanvasStore()
     @StateObject private var animationStore = AnimationStore()
+    @State private var layers: [DrawingLayer] = [DrawingLayer(name: "Layer 1")]
+    @State private var activeLayerIndex: Int = 0
+    @State private var showLayerPanel: Bool = false
+    @State private var layerUpdateTrigger: Int = 0
 
     var body: some View {
         VStack(spacing: 0) {
@@ -30,6 +34,7 @@ struct ContentView: View {
                 templateGrid: $templateGrid,
                 referenceImage: $referenceImage,
                 referenceOpacity: $referenceOpacity,
+                showLayerPanel: $showLayerPanel,
                 canvasStore: canvasStore,
                 animationStore: animationStore
             )
@@ -68,12 +73,22 @@ struct ContentView: View {
                         referenceOpacity: $referenceOpacity,
                         canvasStore: canvasStore,
                         animationStore: animationStore,
+                        layers: layers,
+                        activeLayerIndex: activeLayerIndex,
                         onPickColor: { color in
                             currentColor = color
                             currentTool = .pencil
+                        },
+                        onCanvasChanged: {
+                            // Sync active layer's drawing from canvas
+                            if activeLayerIndex < layers.count,
+                               let smoothView = canvasStore.smoothCanvasView {
+                                layers[activeLayerIndex].drawing = smoothView.drawing
+                            }
                         }
                     )
                     .background(Color(.systemGray6))
+                    .id(layerUpdateTrigger)
                 }
 
                 // Floating toolbar on the left
@@ -81,6 +96,21 @@ struct ContentView: View {
                            selectedShapeKind: $currentShapeKind,
                            shapeFilled: $shapeFilled)
                     .padding(.leading, 12)
+
+                // Layer panel on the right (smooth mode only)
+                if canvasMode == .smooth && showLayerPanel {
+                    HStack {
+                        Spacer()
+                        LayerPanelView(
+                            layers: $layers,
+                            activeLayerIndex: $activeLayerIndex,
+                            onLayerChanged: {
+                                layerUpdateTrigger += 1
+                            }
+                        )
+                        .padding(.trailing, 12)
+                    }
+                }
             }
 
             FrameTimelineView(

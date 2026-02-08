@@ -1,7 +1,7 @@
 import SwiftUI
 
 @main
-struct PixelArtApp: App {
+struct InklingArtApp: App {
     var body: some Scene {
         WindowGroup {
             ContentView()

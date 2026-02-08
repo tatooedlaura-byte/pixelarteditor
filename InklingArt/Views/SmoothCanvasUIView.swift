@@ -48,9 +48,24 @@ class SmoothCanvasUIView: UIView, PKCanvasViewDelegate, UIScrollViewDelegate {
     // Reference image
     private let referenceImageView = UIImageView()
 
+    // Layer compositing
+    private let belowLayersImageView = UIImageView()
+    private let aboveLayersImageView = UIImageView()
+
+    // Mirror drawing
+    var mirrorEnabled: Bool = false {
+        didSet { updateMirrorGuide() }
+    }
+    private let mirrorGuideLayer = CAShapeLayer()
+    private var isProcessingMirror = false
+    private var lastStrokeCount = 0
+
     var drawing: PKDrawing {
         get { pkCanvasView.drawing }
-        set { pkCanvasView.drawing = newValue }
+        set {
+            pkCanvasView.drawing = newValue
+            lastStrokeCount = newValue.strokes.count
+        }
     }
 
     var referenceImage: UIImage? {
@@ -129,6 +144,11 @@ class SmoothCanvasUIView: UIView, PKCanvasViewDelegate, UIScrollViewDelegate {
         referenceImageView.alpha = referenceOpacity
         referenceImageView.translatesAutoresizingMaskIntoConstraints = false
 
+        // Below layers (rendered beneath active layer)
+        contentView.addSubview(belowLayersImageView)
+        belowLayersImageView.contentMode = .scaleToFill
+        belowLayersImageView.translatesAutoresizingMaskIntoConstraints = false
+
         // PencilKit canvas
         contentView.addSubview(pkCanvasView)
         pkCanvasView.delegate = self
@@ -139,11 +159,26 @@ class SmoothCanvasUIView: UIView, PKCanvasViewDelegate, UIScrollViewDelegate {
         pkCanvasView.isScrollEnabled = false
         pkCanvasView.overrideUserInterfaceStyle = .light
 
+        // Above layers (rendered above active layer)
+        contentView.addSubview(aboveLayersImageView)
+        aboveLayersImageView.contentMode = .scaleToFill
+        aboveLayersImageView.isUserInteractionEnabled = false
+        aboveLayersImageView.translatesAutoresizingMaskIntoConstraints = false
+
         // Shape preview layer
         shapePreviewLayer.fillColor = nil
         shapePreviewLayer.lineCap = .round
         shapePreviewLayer.frame = CGRect(x: 0, y: 0, width: canvasSize, height: canvasSize)
         contentView.layer.addSublayer(shapePreviewLayer)
+
+        // Mirror guide line (dashed red vertical center line)
+        mirrorGuideLayer.strokeColor = UIColor.systemRed.cgColor
+        mirrorGuideLayer.lineWidth = 1.5
+        mirrorGuideLayer.lineDashPattern = [6, 4]
+        mirrorGuideLayer.fillColor = nil
+        mirrorGuideLayer.isHidden = true
+        mirrorGuideLayer.frame = CGRect(x: 0, y: 0, width: canvasSize, height: canvasSize)
+        contentView.layer.addSublayer(mirrorGuideLayer)
 
         // Selection preview layer
         selectionPreviewLayer.strokeColor = UIColor.systemBlue.cgColor
@@ -221,10 +256,20 @@ class SmoothCanvasUIView: UIView, PKCanvasViewDelegate, UIScrollViewDelegate {
             referenceImageView.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
             referenceImageView.bottomAnchor.constraint(equalTo: contentView.bottomAnchor),
 
+            belowLayersImageView.topAnchor.constraint(equalTo: contentView.topAnchor),
+            belowLayersImageView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
+            belowLayersImageView.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
+            belowLayersImageView.bottomAnchor.constraint(equalTo: contentView.bottomAnchor),
+
             pkCanvasView.topAnchor.constraint(equalTo: contentView.topAnchor),
             pkCanvasView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
             pkCanvasView.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
             pkCanvasView.bottomAnchor.constraint(equalTo: contentView.bottomAnchor),
+
+            aboveLayersImageView.topAnchor.constraint(equalTo: contentView.topAnchor),
+            aboveLayersImageView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
+            aboveLayersImageView.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
+            aboveLayersImageView.bottomAnchor.constraint(equalTo: contentView.bottomAnchor),
         ])
 
         // Undo/redo gestures
@@ -712,7 +757,13 @@ class SmoothCanvasUIView: UIView, PKCanvasViewDelegate, UIScrollViewDelegate {
 
         var newDrawing = pkCanvasView.drawing
         newDrawing.strokes.append(stroke)
+        if mirrorEnabled, let mirrored = mirrorStroke(stroke) {
+            newDrawing.strokes.append(mirrored)
+        }
+        isProcessingMirror = true
         setDrawingWithUndo(newDrawing)
+        lastStrokeCount = newDrawing.strokes.count
+        isProcessingMirror = false
 
         delegate?.canvasDidChange()
     }
@@ -1022,18 +1073,153 @@ class SmoothCanvasUIView: UIView, PKCanvasViewDelegate, UIScrollViewDelegate {
     // MARK: - PKCanvasViewDelegate
 
     func canvasViewDrawingDidChange(_ canvasView: PKCanvasView) {
+        guard !isProcessingMirror else { return }
+
+        if mirrorEnabled {
+            let currentCount = canvasView.drawing.strokes.count
+            if currentCount > lastStrokeCount {
+                let newStrokes = Array(canvasView.drawing.strokes[lastStrokeCount..<currentCount])
+                var mirroredStrokes: [PKStroke] = []
+                for stroke in newStrokes {
+                    if let mirrored = mirrorStroke(stroke) {
+                        mirroredStrokes.append(mirrored)
+                    }
+                }
+                if !mirroredStrokes.isEmpty {
+                    isProcessingMirror = true
+                    var newDrawing = canvasView.drawing
+                    for s in mirroredStrokes {
+                        newDrawing.strokes.append(s)
+                    }
+                    setDrawingWithUndo(newDrawing)
+                    lastStrokeCount = newDrawing.strokes.count
+                    isProcessingMirror = false
+                } else {
+                    lastStrokeCount = currentCount
+                }
+            } else {
+                lastStrokeCount = currentCount
+            }
+        } else {
+            lastStrokeCount = canvasView.drawing.strokes.count
+        }
+
         delegate?.canvasDidChange()
+    }
+
+    // MARK: - Mirror Drawing
+
+    private func mirrorStroke(_ stroke: PKStroke) -> PKStroke? {
+        let midX = canvasSize / 2
+        var flippedPoints: [PKStrokePoint] = []
+        for point in stroke.path {
+            let flippedX = 2 * midX - point.location.x
+            let flippedLocation = CGPoint(x: flippedX, y: point.location.y)
+            let flippedPoint = PKStrokePoint(
+                location: flippedLocation,
+                timeOffset: point.timeOffset,
+                size: point.size,
+                opacity: point.opacity,
+                force: point.force,
+                azimuth: point.azimuth,
+                altitude: point.altitude
+            )
+            flippedPoints.append(flippedPoint)
+        }
+        guard flippedPoints.count >= 2 else { return nil }
+        let newPath = PKStrokePath(controlPoints: flippedPoints, creationDate: Date())
+        return PKStroke(ink: stroke.ink, path: newPath)
+    }
+
+    private func updateMirrorGuide() {
+        if mirrorEnabled {
+            let midX = canvasSize / 2
+            let path = UIBezierPath()
+            path.move(to: CGPoint(x: midX, y: 0))
+            path.addLine(to: CGPoint(x: midX, y: canvasSize))
+            mirrorGuideLayer.path = path.cgPath
+            mirrorGuideLayer.isHidden = false
+        } else {
+            mirrorGuideLayer.isHidden = true
+        }
+    }
+
+    // MARK: - Layer Support
+
+    func clearUndoHistory() {
+        pkCanvasView.undoManager?.removeAllActions()
+        lastStrokeCount = pkCanvasView.drawing.strokes.count
+    }
+
+    func updateLayerComposites(layers: [DrawingLayer], activeIndex: Int) {
+        let size = CGSize(width: canvasSize, height: canvasSize)
+        let rect = CGRect(origin: .zero, size: size)
+
+        // Render layers below the active layer
+        let belowImage = renderLayerRange(layers: layers, range: 0..<activeIndex, rect: rect)
+        belowLayersImageView.image = belowImage
+
+        // Render layers above the active layer
+        let aboveStart = activeIndex + 1
+        let aboveImage = renderLayerRange(layers: layers, range: aboveStart..<layers.count, rect: rect)
+        aboveLayersImageView.image = aboveImage
+    }
+
+    private func renderLayerRange(layers: [DrawingLayer], range: Range<Int>, rect: CGRect) -> UIImage? {
+        guard !range.isEmpty else { return nil }
+        var hasContent = false
+        for i in range {
+            if layers[i].isVisible { hasContent = true; break }
+        }
+        guard hasContent else { return nil }
+
+        let renderer = UIGraphicsImageRenderer(size: rect.size)
+        return renderer.image { context in
+            for i in range {
+                let layer = layers[i]
+                guard layer.isVisible else { continue }
+                let layerImage = layer.drawing.image(from: rect, scale: 1.0)
+                context.cgContext.saveGState()
+                context.cgContext.setAlpha(layer.opacity)
+                layerImage.draw(in: rect)
+                context.cgContext.restoreGState()
+            }
+        }
     }
 
     // MARK: - Canvas Operations
 
     func clearCanvas() {
         pkCanvasView.drawing = PKDrawing()
+        lastStrokeCount = 0
     }
 
     func renderImage(scale: CGFloat = 1.0) -> UIImage? {
         let rect = CGRect(origin: .zero, size: CGSize(width: canvasSize, height: canvasSize))
         return pkCanvasView.drawing.image(from: rect, scale: scale)
+    }
+
+    func renderCompositeImage(layers: [DrawingLayer], activeIndex: Int, scale: CGFloat = 1.0) -> UIImage? {
+        let size = CGSize(width: canvasSize, height: canvasSize)
+        let rect = CGRect(origin: .zero, size: size)
+        let renderer = UIGraphicsImageRenderer(size: CGSize(width: canvasSize * scale, height: canvasSize * scale))
+        return renderer.image { context in
+            context.cgContext.scaleBy(x: scale, y: scale)
+            for (i, layer) in layers.enumerated() {
+                guard layer.isVisible else { continue }
+                let layerDrawing: PKDrawing
+                if i == activeIndex {
+                    layerDrawing = pkCanvasView.drawing
+                } else {
+                    layerDrawing = layer.drawing
+                }
+                let layerImage = layerDrawing.image(from: rect, scale: 1.0)
+                context.cgContext.saveGState()
+                context.cgContext.setAlpha(layer.opacity)
+                layerImage.draw(in: rect)
+                context.cgContext.restoreGState()
+            }
+        }
     }
 
     // MARK: - Zoom
@@ -1060,8 +1246,10 @@ class SmoothCanvasUIView: UIView, PKCanvasViewDelegate, UIScrollViewDelegate {
         contentHeightConstraint?.constant = newSize
         shapePreviewLayer.frame = CGRect(x: 0, y: 0, width: newSize, height: newSize)
         selectionPreviewLayer.frame = CGRect(x: 0, y: 0, width: newSize, height: newSize)
+        mirrorGuideLayer.frame = CGRect(x: 0, y: 0, width: newSize, height: newSize)
         scrollView.contentSize = CGSize(width: newSize, height: newSize)
         checkerboardView.backgroundColor = buildCheckerPattern()
+        updateMirrorGuide()
         layoutIfNeeded()
         centerContent()
     }

@@ -38,15 +38,15 @@ Stack-based array snapshots (dots are lightweight).
 
 ## Files to Create
 
-1. `PixelArtEditor/Models/DotMark.swift` — data model
-2. `PixelArtEditor/Views/DotArtCanvasUIView.swift` — UIView with scroll/zoom, tap gestures, left-hand slider, Core Graphics rendering
-3. `PixelArtEditor/Views/DotArtCanvasView.swift` — SwiftUI wrapper (same pattern as SmoothCanvasView)
+1. `InklingArt/Models/DotMark.swift` — data model
+2. `InklingArt/Views/DotArtCanvasUIView.swift` — UIView with scroll/zoom, tap gestures, left-hand slider, Core Graphics rendering
+3. `InklingArt/Views/DotArtCanvasView.swift` — SwiftUI wrapper (same pattern as SmoothCanvasView)
 
 ## Files to Modify
 
-4. `PixelArtEditor/Models/Tool.swift` — add `case dotArt` to `CanvasMode`
-5. `PixelArtEditor/Views/ContentView.swift` — add `.dotArt` case to render `DotArtCanvasView`
-6. `PixelArtEditor/Models/CanvasStore.swift` — add `dotArtCanvasView` property
+4. `InklingArt/Models/Tool.swift` — add `case dotArt` to `CanvasMode`
+5. `InklingArt/Views/ContentView.swift` — add `.dotArt` case to render `DotArtCanvasView`
+6. `InklingArt/Models/CanvasStore.swift` — add `dotArtCanvasView` property
 
 ## What Auto-Works (no changes needed)
 

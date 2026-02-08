@@ -13,7 +13,10 @@ struct SmoothCanvasView: UIViewRepresentable {
     @Binding var referenceOpacity: CGFloat
     var canvasStore: CanvasStore
     var animationStore: AnimationStore
+    var layers: [DrawingLayer]
+    var activeLayerIndex: Int
     var onPickColor: ((UIColor) -> Void)?
+    var onCanvasChanged: (() -> Void)?
 
     func makeUIView(context: Context) -> SmoothCanvasUIView {
         let view = SmoothCanvasUIView(frame: .zero)
@@ -26,8 +29,18 @@ struct SmoothCanvasView: UIViewRepresentable {
         view.referenceImage = referenceImage
         view.referenceOpacity = referenceOpacity
 
+        if activeLayerIndex < layers.count {
+            view.mirrorEnabled = layers[activeLayerIndex].isMirror
+            view.drawing = layers[activeLayerIndex].drawing
+        }
+
+        context.coordinator.layers = layers
+        context.coordinator.activeLayerIndex = activeLayerIndex
+        context.coordinator.onCanvasChanged = onCanvasChanged
+
         DispatchQueue.main.async {
             canvasStore.smoothCanvasView = view
+            view.updateLayerComposites(layers: layers, activeIndex: activeLayerIndex)
         }
         return view
     }
@@ -41,6 +54,34 @@ struct SmoothCanvasView: UIViewRepresentable {
         uiView.referenceImage = referenceImage
         uiView.referenceOpacity = referenceOpacity
         context.coordinator.onPickColor = onPickColor
+        context.coordinator.onCanvasChanged = onCanvasChanged
+
+        // Layer switch detection
+        let prevIndex = context.coordinator.activeLayerIndex
+        let prevLayers = context.coordinator.layers
+
+        if prevIndex != activeLayerIndex || !layerIDsMatch(prevLayers, layers) {
+            // Save current drawing back to previous layer
+            if prevIndex < prevLayers.count {
+                prevLayers[prevIndex].drawing = uiView.drawing
+            }
+            // Load new active layer
+            if activeLayerIndex < layers.count {
+                uiView.drawing = layers[activeLayerIndex].drawing
+                uiView.clearUndoHistory()
+            }
+        }
+
+        context.coordinator.layers = layers
+        context.coordinator.activeLayerIndex = activeLayerIndex
+
+        // Update mirror state
+        if activeLayerIndex < layers.count {
+            uiView.mirrorEnabled = layers[activeLayerIndex].isMirror
+        }
+
+        // Update layer composites
+        uiView.updateLayerComposites(layers: layers, activeIndex: activeLayerIndex)
 
         if context.coordinator.lastUndoTrigger != undoTrigger {
             context.coordinator.lastUndoTrigger = undoTrigger
@@ -52,6 +93,14 @@ struct SmoothCanvasView: UIViewRepresentable {
         }
     }
 
+    private func layerIDsMatch(_ a: [DrawingLayer], _ b: [DrawingLayer]) -> Bool {
+        guard a.count == b.count else { return false }
+        for i in a.indices {
+            if a[i].id != b[i].id { return false }
+        }
+        return true
+    }
+
     func makeCoordinator() -> Coordinator {
         Coordinator(animationStore: animationStore, onPickColor: onPickColor)
     }
@@ -61,6 +110,9 @@ struct SmoothCanvasView: UIViewRepresentable {
         var lastRedoTrigger = 0
         var animationStore: AnimationStore
         var onPickColor: ((UIColor) -> Void)?
+        var onCanvasChanged: (() -> Void)?
+        var layers: [DrawingLayer] = []
+        var activeLayerIndex: Int = 0
 
         init(animationStore: AnimationStore, onPickColor: ((UIColor) -> Void)?) {
             self.animationStore = animationStore
@@ -68,7 +120,7 @@ struct SmoothCanvasView: UIViewRepresentable {
         }
 
         func canvasDidChange() {
-            // Canvas changed
+            onCanvasChanged?()
         }
 
         func didPickColor(_ color: UIColor) {
