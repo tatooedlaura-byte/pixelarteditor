@@ -22,6 +22,10 @@ class SmoothCanvasUIView: UIView, PKCanvasViewDelegate, UIScrollViewDelegate {
     private var shapeStartPoint: CGPoint?
     private var shapeEndPoint: CGPoint?
     private var shapePanGesture: UIPanGestureRecognizer!
+    private var shapeConfirmTapGesture: UITapGestureRecognizer!
+    private var shapePendingCommit = false
+    private var isMovingShape = false
+    private var lastPanLocation: CGPoint?
     private var eyedropperTapGesture: UITapGestureRecognizer!
     private var fillTapGesture: UITapGestureRecognizer!
 
@@ -51,6 +55,10 @@ class SmoothCanvasUIView: UIView, PKCanvasViewDelegate, UIScrollViewDelegate {
 
     var currentTool: Tool = .pencil {
         didSet {
+            if shapePendingCommit {
+                commitShape()
+                clearShapePendingState()
+            }
             updateTool()
             shapePreviewLayer.path = nil
             isDrawingShape = false
@@ -123,6 +131,11 @@ class SmoothCanvasUIView: UIView, PKCanvasViewDelegate, UIScrollViewDelegate {
         shapePanGesture.isEnabled = false
         shapePanGesture.maximumNumberOfTouches = 1
         scrollView.addGestureRecognizer(shapePanGesture)
+
+        // Shape confirm tap gesture
+        shapeConfirmTapGesture = UITapGestureRecognizer(target: self, action: #selector(handleShapeConfirmTap(_:)))
+        shapeConfirmTapGesture.isEnabled = false
+        scrollView.addGestureRecognizer(shapeConfirmTapGesture)
 
         // Eyedropper tap gesture
         eyedropperTapGesture = UITapGestureRecognizer(target: self, action: #selector(handleEyedropperTap(_:)))
@@ -229,6 +242,7 @@ class SmoothCanvasUIView: UIView, PKCanvasViewDelegate, UIScrollViewDelegate {
             scrollView.isScrollEnabled = true
             scrollView.pinchGestureRecognizer?.isEnabled = true
             shapePanGesture.isEnabled = false
+            shapeConfirmTapGesture.isEnabled = false
             eyedropperTapGesture.isEnabled = false
             fillTapGesture.isEnabled = false
 
@@ -238,6 +252,7 @@ class SmoothCanvasUIView: UIView, PKCanvasViewDelegate, UIScrollViewDelegate {
             scrollView.isScrollEnabled = true
             scrollView.pinchGestureRecognizer?.isEnabled = true
             shapePanGesture.isEnabled = false
+            shapeConfirmTapGesture.isEnabled = false
             eyedropperTapGesture.isEnabled = false
             fillTapGesture.isEnabled = false
 
@@ -246,6 +261,7 @@ class SmoothCanvasUIView: UIView, PKCanvasViewDelegate, UIScrollViewDelegate {
             scrollView.isScrollEnabled = true
             scrollView.pinchGestureRecognizer?.isEnabled = true
             shapePanGesture.isEnabled = false
+            shapeConfirmTapGesture.isEnabled = false
             eyedropperTapGesture.isEnabled = false
             fillTapGesture.isEnabled = true
 
@@ -254,6 +270,7 @@ class SmoothCanvasUIView: UIView, PKCanvasViewDelegate, UIScrollViewDelegate {
             scrollView.isScrollEnabled = true
             scrollView.pinchGestureRecognizer?.isEnabled = true
             shapePanGesture.isEnabled = false
+            shapeConfirmTapGesture.isEnabled = false
             eyedropperTapGesture.isEnabled = true
             fillTapGesture.isEnabled = false
 
@@ -262,6 +279,7 @@ class SmoothCanvasUIView: UIView, PKCanvasViewDelegate, UIScrollViewDelegate {
             scrollView.isScrollEnabled = false
             scrollView.pinchGestureRecognizer?.isEnabled = false
             shapePanGesture.isEnabled = true
+            shapeConfirmTapGesture.isEnabled = true
             eyedropperTapGesture.isEnabled = false
             fillTapGesture.isEnabled = false
         }
@@ -351,33 +369,95 @@ class SmoothCanvasUIView: UIView, PKCanvasViewDelegate, UIScrollViewDelegate {
     // MARK: - Shape Tool
 
     @objc private func handleShapePan(_ gesture: UIPanGestureRecognizer) {
-        // Get location in contentView (where shapes are drawn)
         let location = gesture.location(in: contentView)
 
         switch gesture.state {
         case .began:
-            shapeStartPoint = location
-            shapeEndPoint = location
-            isDrawingShape = true
-            updateShapePreview()
+            if shapePendingCommit, isPointNearShape(location) {
+                // Start moving the pending shape
+                isMovingShape = true
+                lastPanLocation = location
+            } else {
+                // Commit any pending shape, then start drawing a new one
+                if shapePendingCommit {
+                    commitShape()
+                    clearShapePendingState()
+                }
+                shapeStartPoint = location
+                shapeEndPoint = location
+                isDrawingShape = true
+                isMovingShape = false
+                updateShapePreview()
+            }
 
         case .changed:
-            shapeEndPoint = location
-            updateShapePreview()
+            if isMovingShape, let last = lastPanLocation,
+               let start = shapeStartPoint, let end = shapeEndPoint {
+                let dx = location.x - last.x
+                let dy = location.y - last.y
+                shapeStartPoint = CGPoint(x: start.x + dx, y: start.y + dy)
+                shapeEndPoint = CGPoint(x: end.x + dx, y: end.y + dy)
+                lastPanLocation = location
+                updateShapePreview()
+            } else {
+                shapeEndPoint = location
+                updateShapePreview()
+            }
 
         case .ended:
-            shapeEndPoint = location
-            commitShape()
-            isDrawingShape = false
-            shapePreviewLayer.path = nil
+            if isMovingShape {
+                // Finished moving — keep as pending
+                isMovingShape = false
+                lastPanLocation = nil
+            } else {
+                // Finished drawing — enter pending state
+                shapeEndPoint = location
+                updateShapePreview()
+                isDrawingShape = false
+                shapePendingCommit = true
+            }
 
         case .cancelled, .failed:
-            isDrawingShape = false
-            shapePreviewLayer.path = nil
+            if isMovingShape {
+                isMovingShape = false
+                lastPanLocation = nil
+            } else {
+                isDrawingShape = false
+                shapePreviewLayer.path = nil
+                clearShapePendingState()
+            }
 
         default:
             break
         }
+    }
+
+    @objc private func handleShapeConfirmTap(_ gesture: UITapGestureRecognizer) {
+        guard shapePendingCommit else { return }
+        commitShape()
+        clearShapePendingState()
+    }
+
+    private func clearShapePendingState() {
+        shapePendingCommit = false
+        isMovingShape = false
+        lastPanLocation = nil
+        shapePreviewLayer.path = nil
+    }
+
+    private func shapeBoundingBox() -> CGRect? {
+        guard let start = shapeStartPoint, let end = shapeEndPoint else { return nil }
+        let constrained = constrainedEnd(start: start, end: end)
+        return CGRect(x: min(start.x, constrained.x),
+                      y: min(start.y, constrained.y),
+                      width: abs(constrained.x - start.x),
+                      height: abs(constrained.y - start.y))
+    }
+
+    private func isPointNearShape(_ point: CGPoint) -> Bool {
+        guard let bbox = shapeBoundingBox() else { return false }
+        let padding: CGFloat = 30
+        return bbox.insetBy(dx: -padding, dy: -padding).contains(point)
     }
 
     private func constrainedEnd(start: CGPoint, end: CGPoint) -> CGPoint {
@@ -572,6 +652,12 @@ class SmoothCanvasUIView: UIView, PKCanvasViewDelegate, UIScrollViewDelegate {
     }
 
     func performUndo() {
+        if shapePendingCommit {
+            clearShapePendingState()
+            shapeStartPoint = nil
+            shapeEndPoint = nil
+            return
+        }
         pkCanvasView.undoManager?.undo()
     }
 
