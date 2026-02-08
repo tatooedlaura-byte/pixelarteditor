@@ -225,21 +225,6 @@ struct TopBarView: View {
                     .cornerRadius(8)
                 }
 
-                // Snap (shape recognition) toggle
-                Button {
-                    shapeRecognitionEnabled.toggle()
-                } label: {
-                    HStack(spacing: 4) {
-                        Image(systemName: shapeRecognitionEnabled ? "hand.draw.fill" : "hand.draw")
-                        Text("Snap")
-                            .font(.subheadline.bold())
-                    }
-                    .foregroundColor(shapeRecognitionEnabled ? .white : .primary)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 6)
-                    .background(shapeRecognitionEnabled ? Color.green : Color(.systemGray5))
-                    .cornerRadius(8)
-                }
             }
 
             // Reference image menu

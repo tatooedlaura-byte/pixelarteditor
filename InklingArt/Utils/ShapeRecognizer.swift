@@ -7,17 +7,17 @@ enum RecognizedShapeKind {
 
 struct RecognizedShape {
     let kind: RecognizedShapeKind
-    let boundingRect: CGRect
-    let lineStart: CGPoint?
-    let lineEnd: CGPoint?
+    var boundingRect: CGRect
+    var lineStart: CGPoint?
+    var lineEnd: CGPoint?
     // Arc properties
-    let arcCenter: CGPoint?
-    let arcRadius: CGFloat?
-    let arcStartAngle: CGFloat?
-    let arcEndAngle: CGFloat?
-    let arcClockwise: Bool?
+    var arcCenter: CGPoint?
+    var arcRadius: CGFloat?
+    var arcStartAngle: CGFloat?
+    var arcEndAngle: CGFloat?
+    var arcClockwise: Bool?
     // Triangle vertices
-    let triangleVertices: [CGPoint]?
+    var triangleVertices: [CGPoint]?
 }
 
 struct ShapeRecognizer {

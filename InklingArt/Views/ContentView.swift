@@ -20,7 +20,7 @@ struct ContentView: View {
     @State private var layers: [DrawingLayer] = [DrawingLayer(name: "Layer 1")]
     @State private var activeLayerIndex: Int = 0
     @State private var showLayerPanel: Bool = false
-    @State private var shapeRecognitionEnabled: Bool = false
+    @State private var shapeRecognitionEnabled: Bool = true
     @State private var layerUpdateTrigger: Int = 0
 
     var body: some View {
@@ -96,7 +96,6 @@ struct ContentView: View {
                         }
                     )
                     .background(Color(.systemGray6))
-                    .id(layerUpdateTrigger)
                 }
 
                 // Floating toolbar on the left

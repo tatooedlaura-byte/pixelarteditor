@@ -47,6 +47,7 @@ struct SmoothCanvasView: UIViewRepresentable {
     }
 
     func updateUIView(_ uiView: SmoothCanvasUIView, context: Context) {
+        print("🔄 SmoothCanvasView.updateUIView called with shapeRecognitionEnabled=\(shapeRecognitionEnabled)")
         uiView.currentColor = currentColor
         uiView.currentTool = currentTool
         uiView.currentShapeKind = currentShapeKind
@@ -55,6 +56,7 @@ struct SmoothCanvasView: UIViewRepresentable {
         uiView.referenceImage = referenceImage
         uiView.referenceOpacity = referenceOpacity
         uiView.shapeRecognitionEnabled = shapeRecognitionEnabled
+        print("✅ Set uiView.shapeRecognitionEnabled to \(uiView.shapeRecognitionEnabled)")
         context.coordinator.onPickColor = onPickColor
         context.coordinator.onCanvasChanged = onCanvasChanged
 

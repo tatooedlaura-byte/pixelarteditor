@@ -66,6 +66,22 @@ class SmoothCanvasUIView: UIView, PKCanvasViewDelegate, UIScrollViewDelegate {
     private var lastRecognizedStrokeCount = 0
     private var drawingBeforeRecognition: PKDrawing?
 
+    // Hold-to-snap gesture state
+    private var holdGestureTimer: Timer?
+    private var isHoldingForSnap = false
+    private var holdStartStrokeCount = 0
+    private var holdPreviewLayer = CAShapeLayer()
+    private var secondFingerTapGesture: UITapGestureRecognizer!
+    private var canSnapToPerfectShape = false
+    private var currentHoldShape: RecognizedShape?
+    private var lastStrokePointCount = 0
+    private var holdDetectionStartTime: Date?
+    private var isResizingHoldShape = false
+    private var holdShapeInitialRect: CGRect?
+    private var holdShapeResizeStartPoint: CGPoint?
+    private var resizingShapeStrokeIndex: Int?
+    private var lastDragStrokeCount = 0
+
     var drawing: PKDrawing {
         get { pkCanvasView.drawing }
         set {
@@ -232,6 +248,22 @@ class SmoothCanvasUIView: UIView, PKCanvasViewDelegate, UIScrollViewDelegate {
         recognizedShapeTapGesture = UITapGestureRecognizer(target: self, action: #selector(handleRecognizedShapeTap(_:)))
         recognizedShapeTapGesture.isEnabled = false
         scrollView.addGestureRecognizer(recognizedShapeTapGesture)
+
+        // Hold-to-snap preview layer (add to PKCanvas layer so it's visible on top)
+        holdPreviewLayer.fillColor = nil
+        holdPreviewLayer.strokeColor = UIColor.systemGreen.withAlphaComponent(0.8).cgColor
+        holdPreviewLayer.lineWidth = 4
+        holdPreviewLayer.lineCap = .round
+        holdPreviewLayer.lineJoin = .round
+        holdPreviewLayer.frame = CGRect(x: 0, y: 0, width: canvasSize, height: canvasSize)
+        holdPreviewLayer.isHidden = true
+        pkCanvasView.layer.addSublayer(holdPreviewLayer)
+
+        // Second finger tap for perfect shapes
+        secondFingerTapGesture = UITapGestureRecognizer(target: self, action: #selector(handleSecondFingerTap(_:)))
+        secondFingerTapGesture.numberOfTouchesRequired = 2
+        secondFingerTapGesture.isEnabled = false
+        scrollView.addGestureRecognizer(secondFingerTapGesture)
 
         // Flip button
         flipButton = UIButton(type: .system)
@@ -1041,10 +1073,78 @@ class SmoothCanvasUIView: UIView, PKCanvasViewDelegate, UIScrollViewDelegate {
     // MARK: - PKCanvasViewDelegate
 
     func canvasViewDrawingDidChange(_ canvasView: PKCanvasView) {
-        if shapeRecognitionEnabled && currentTool == .pencil && !recognizedShapePendingCommit {
-            attemptShapeRecognition(canvasView)
+        let currentCount = canvasView.drawing.strokes.count
+
+        print("📝 Drawing changed: strokes=\(currentCount) snap=\(shapeRecognitionEnabled) tool=\(currentTool.rawValue)")
+
+        // Hold-to-snap detection (works regardless of snap toggle)
+        if currentTool == .pencil && !recognizedShapePendingCommit && !isHoldingForSnap {
+            print("✅ Conditions passed for hold detection")
+            if currentCount > holdStartStrokeCount {
+                // New stroke started
+                print("🆕 New stroke started! count=\(currentCount) prev=\(holdStartStrokeCount)")
+                holdStartStrokeCount = currentCount
+                lastStrokePointCount = 0
+                holdDetectionStartTime = Date()
+                startHoldGestureTimer(canvasView)
+            } else if currentCount == holdStartStrokeCount && currentCount > 0 {
+                // Same stroke continuing - check if points are still being added
+                let lastStroke = canvasView.drawing.strokes[currentCount - 1]
+                let currentPointCount = lastStroke.path.count
+
+                print("📊 Stroke continuing: points=\(currentPointCount) last=\(lastStrokePointCount)")
+
+                // Only reset timer if stroke is actually growing (not just tiny movements)
+                if currentPointCount > lastStrokePointCount + 3 {
+                    // Stroke is actively growing - reset timer
+                    print("📈 Stroke growing - resetting timer")
+                    lastStrokePointCount = currentPointCount
+                    startHoldGestureTimer(canvasView)
+                }
+                // If point count hasn't grown much, let timer fire (user is holding still)
+            }
+        } else {
+            print("❌ Hold detection blocked: snap=\(shapeRecognitionEnabled) tool=\(currentTool.rawValue) pending=\(recognizedShapePendingCommit) holding=\(isHoldingForSnap)")
         }
         delegate?.canvasDidChange()
+    }
+
+    func canvasViewDidEndUsingTool(_ canvasView: PKCanvasView) {
+        print("✏️ Pencil lifted")
+
+        // If we have a recognized shape, replace the wobbly stroke NOW
+        if let shape = currentHoldShape, recognizedShapePendingCommit {
+            print("🔄 Replacing wobbly stroke with clean shape on lift...")
+
+            var newDrawing = canvasView.drawing
+            if newDrawing.strokes.count > 0 {
+                newDrawing.strokes.removeLast() // Remove wobbly stroke
+            }
+
+            let cleanStroke = createStrokeFromShape(shape)
+            newDrawing.strokes.append(cleanStroke)
+
+            setDrawingWithUndo(newDrawing)
+
+            // Hide preview
+            holdPreviewLayer.isHidden = true
+
+            // Success haptic
+            let generator = UINotificationFeedbackGenerator()
+            generator.notificationOccurred(.success)
+
+            print("✅ Clean shape committed!")
+
+            // Clean up
+            currentHoldShape = nil
+            recognizedShapePendingCommit = false
+        }
+
+        // Reset hold state
+        isHoldingForSnap = false
+
+        // Cancel hold timer when user lifts pencil
+        cancelHoldGestureTimer()
     }
 
     // MARK: - Shape Recognition
@@ -1391,6 +1491,525 @@ class SmoothCanvasUIView: UIView, PKCanvasViewDelegate, UIScrollViewDelegate {
         delegate?.canvasDidChange()
     }
 
+    // MARK: - Hold-to-Snap Gesture
+
+    private func startHoldGestureTimer(_ canvasView: PKCanvasView) {
+        // Cancel existing timer
+        holdGestureTimer?.invalidate()
+
+        print("⏱️ Starting/resetting hold timer at \(Date())")
+
+        // Start new timer for 0.5 seconds (shorter for easier testing)
+        holdGestureTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: false) { [weak self] _ in
+            print("🔥 Timer fired at \(Date())")
+            self?.triggerHoldShapeRecognition(canvasView)
+        }
+
+        // Immediate haptic to show timer started
+        let generator = UIImpactFeedbackGenerator(style: .light)
+        generator.impactOccurred()
+        print("✨ Light haptic - timer started")
+    }
+
+    private func cancelHoldGestureTimer() {
+        holdGestureTimer?.invalidate()
+        holdGestureTimer = nil
+        isHoldingForSnap = false
+        currentHoldShape = nil
+        holdPreviewLayer.isHidden = true
+        canSnapToPerfectShape = false
+        secondFingerTapGesture.isEnabled = false
+        lastStrokePointCount = 0
+        holdDetectionStartTime = nil
+
+        // Also reset resize state
+        isResizingHoldShape = false
+        holdShapeResizeStartPoint = nil
+        holdShapeInitialRect = nil
+        resizingShapeStrokeIndex = nil
+        lastDragStrokeCount = 0
+    }
+
+    private func triggerHoldShapeRecognition(_ canvasView: PKCanvasView) {
+        print("🎯 Hold timer fired!")
+        guard currentTool == .pencil && !recognizedShapePendingCommit else {
+            print("❌ Hold recognition blocked: tool=\(currentTool) pending=\(recognizedShapePendingCommit)")
+            return
+        }
+
+        let currentCount = canvasView.drawing.strokes.count
+        guard currentCount > 0 else {
+            print("❌ No strokes")
+            return
+        }
+        print("✅ Processing hold recognition for \(currentCount) strokes")
+
+        // Get the last stroke
+        let lastStroke = canvasView.drawing.strokes[currentCount - 1]
+        print("📍 Got last stroke, extracting points...")
+
+        var points: [CGPoint] = []
+        for point in lastStroke.path {
+            points.append(point.location)
+        }
+
+        print("📊 Extracted \(points.count) points from stroke")
+        guard points.count >= 10 else {
+            print("❌ Not enough points: \(points.count)")
+            return
+        }
+
+        // Try to recognize shape
+        print("🔍 Attempting shape recognition...")
+        if let shape = ShapeRecognizer.recognize(points: points) {
+            print("✨ Shape recognized: \(shape.kind)")
+
+            // Store the hold point (last point of the stroke where user is holding)
+            if let lastPoint = points.last {
+                holdShapeResizeStartPoint = lastPoint
+                print("📍 Hold point: \(lastPoint)")
+            }
+
+            // Store original shape bounds
+            holdShapeInitialRect = shape.boundingRect
+            currentHoldShape = shape
+
+            // Show green preview (don't replace yet - pencil still down!)
+            print("🎨 Showing green preview...")
+            showHoldShapePreview(shape)
+
+            // Mark that we have a shape ready to commit
+            recognizedShapePendingCommit = true
+            isHoldingForSnap = true
+
+            print("✅ Preview shown! Continue dragging or lift to commit")
+
+            // Provide haptic feedback
+            let generator = UIImpactFeedbackGenerator(style: .medium)
+            generator.impactOccurred()
+
+            print("🎯 Entered resize mode - drag to resize, lift to commit")
+        } else {
+            print("❌ No shape recognized from \(points.count) points")
+        }
+    }
+
+    private func handleResizeDrag(_ canvasView: PKCanvasView, currentCount: Int) {
+        print("🔧 Resize mode active - tracking drag...")
+
+        // If a new stroke appeared, user is dragging to resize
+        if currentCount > lastDragStrokeCount {
+            print("📏 New drag stroke detected (count \(lastDragStrokeCount) → \(currentCount))")
+
+            // Get the drag tracking stroke that PKCanvasView just created
+            let dragStroke = canvasView.drawing.strokes[currentCount - 1]
+
+            // Get current drag position (last point of the drag stroke)
+            guard let currentDragPoint = dragStroke.path.last?.location,
+                  let holdPoint = holdShapeResizeStartPoint,
+                  let originalRect = holdShapeInitialRect,
+                  let shapeIndex = resizingShapeStrokeIndex,
+                  var shape = currentHoldShape else {
+                print("❌ Missing resize data")
+                return
+            }
+
+            print("📍 Drag from \(holdPoint) to \(currentDragPoint)")
+
+            // Calculate resize based on distance from hold point
+            let originalDistance = sqrt(pow(originalRect.width, 2) + pow(originalRect.height, 2)) / 2
+            let currentDistance = hypot(currentDragPoint.x - holdPoint.x, currentDragPoint.y - holdPoint.y)
+            let scaleFactor = max(0.3, min(3.0, 1.0 + (currentDistance - 20) / max(1, originalDistance)))
+
+            print("📐 Scale factor: \(scaleFactor) (dist: \(currentDistance))")
+
+            // Create resized shape
+            let center = originalRect.center
+            let newWidth = originalRect.width * scaleFactor
+            let newHeight = originalRect.height * scaleFactor
+            let newRect = CGRect(
+                x: center.x - newWidth / 2,
+                y: center.y - newHeight / 2,
+                width: newWidth,
+                height: newHeight
+            )
+
+            // Update shape with new bounds
+            var resizedShape = shape
+            resizedShape.boundingRect = newRect
+
+            // For lines, also update endpoints
+            if shape.kind == .line, let start = shape.lineStart, let end = shape.lineEnd {
+                let lineCenter = CGPoint(x: (start.x + end.x) / 2, y: (start.y + end.y) / 2)
+                let dx = end.x - start.x
+                let dy = end.y - start.y
+                resizedShape.lineStart = CGPoint(x: lineCenter.x - dx * scaleFactor / 2, y: lineCenter.y - dy * scaleFactor / 2)
+                resizedShape.lineEnd = CGPoint(x: lineCenter.x + dx * scaleFactor / 2, y: lineCenter.y + dy * scaleFactor / 2)
+            }
+
+            // Update the drawing with resized shape
+            var newDrawing = canvasView.drawing
+
+            // Remove drag tracking stroke
+            if newDrawing.strokes.count > shapeIndex + 1 {
+                newDrawing.strokes.removeLast()
+                print("🗑️ Removed drag tracking stroke")
+            }
+
+            // Replace the clean shape at its index with the resized version
+            let resizedStroke = createStrokeFromShape(resizedShape)
+            newDrawing.strokes[shapeIndex] = resizedStroke
+
+            // Update without triggering undo
+            pkCanvasView.drawing = newDrawing
+            currentHoldShape = resizedShape
+
+            print("✅ Shape resized to \(newRect.width)x\(newRect.height)")
+
+            // Don't increment lastDragStrokeCount since we removed the drag stroke
+        }
+
+        delegate?.canvasDidChange()
+    }
+
+    private func canBePerfected(_ shape: RecognizedShape) -> Bool {
+        switch shape.kind {
+        case .circle:
+            // Can snap to perfect circle if it's currently an ellipse
+            let aspectRatio = shape.boundingRect.width / shape.boundingRect.height
+            return aspectRatio < 0.95 || aspectRatio > 1.05
+        case .rectangle:
+            // Can snap to perfect square if it's currently a rectangle
+            let aspectRatio = shape.boundingRect.width / shape.boundingRect.height
+            return aspectRatio < 0.95 || aspectRatio > 1.05
+        case .line:
+            // Lines can snap to 15-degree increments
+            return true
+        default:
+            return false
+        }
+    }
+
+    private func showHoldShapePreview(_ shape: RecognizedShape) {
+        var path: UIBezierPath
+
+        switch shape.kind {
+        case .line:
+            path = UIBezierPath()
+            if let start = shape.lineStart, let end = shape.lineEnd {
+                path.move(to: start)
+                path.addLine(to: end)
+            }
+        case .circle:
+            path = UIBezierPath(ovalIn: shape.boundingRect)
+        case .rectangle:
+            path = UIBezierPath(rect: shape.boundingRect)
+        case .arc:
+            path = UIBezierPath()
+            if let center = shape.arcCenter, let radius = shape.arcRadius,
+               let startAngle = shape.arcStartAngle, let endAngle = shape.arcEndAngle {
+                path.addArc(withCenter: center, radius: radius,
+                           startAngle: startAngle, endAngle: endAngle,
+                           clockwise: shape.arcClockwise ?? true)
+            }
+        case .triangle:
+            path = UIBezierPath()
+            if let vertices = shape.triangleVertices, vertices.count == 3 {
+                path.move(to: vertices[0])
+                path.addLine(to: vertices[1])
+                path.addLine(to: vertices[2])
+                path.close()
+            }
+        }
+
+        holdPreviewLayer.path = path.cgPath
+        holdPreviewLayer.isHidden = false
+    }
+
+    @objc private func handleSecondFingerTap(_ gesture: UITapGestureRecognizer) {
+        guard isHoldingForSnap, let shape = currentHoldShape, canSnapToPerfectShape else {
+            return
+        }
+
+        // Snap to perfect version
+        let perfectShape = snapToPerfectShape(shape)
+        commitHoldShape(perfectShape, perfect: true)
+    }
+
+    private func snapToPerfectShape(_ shape: RecognizedShape) -> RecognizedShape {
+        switch shape.kind {
+        case .circle:
+            // Snap ellipse to perfect circle
+            let avgDimension = (shape.boundingRect.width + shape.boundingRect.height) / 2
+            let perfectRect = CGRect(
+                x: shape.boundingRect.midX - avgDimension / 2,
+                y: shape.boundingRect.midY - avgDimension / 2,
+                width: avgDimension,
+                height: avgDimension
+            )
+            return RecognizedShape(
+                kind: .circle,
+                boundingRect: perfectRect,
+                lineStart: nil, lineEnd: nil,
+                arcCenter: nil, arcRadius: nil, arcStartAngle: nil, arcEndAngle: nil, arcClockwise: nil,
+                triangleVertices: nil
+            )
+
+        case .rectangle:
+            // Snap rectangle to perfect square
+            let avgDimension = (shape.boundingRect.width + shape.boundingRect.height) / 2
+            let perfectRect = CGRect(
+                x: shape.boundingRect.midX - avgDimension / 2,
+                y: shape.boundingRect.midY - avgDimension / 2,
+                width: avgDimension,
+                height: avgDimension
+            )
+            return RecognizedShape(
+                kind: .rectangle,
+                boundingRect: perfectRect,
+                lineStart: nil, lineEnd: nil,
+                arcCenter: nil, arcRadius: nil, arcStartAngle: nil, arcEndAngle: nil, arcClockwise: nil,
+                triangleVertices: nil
+            )
+
+        case .line:
+            // Snap line to 15-degree increments
+            if let start = shape.lineStart, let end = shape.lineEnd {
+                let dx = end.x - start.x
+                let dy = end.y - start.y
+                let angle = atan2(dy, dx)
+                let snapAngle = round(angle / (.pi / 12)) * (.pi / 12) // 15 degrees
+                let length = hypot(dx, dy)
+                let newEnd = CGPoint(
+                    x: start.x + length * cos(snapAngle),
+                    y: start.y + length * sin(snapAngle)
+                )
+                return RecognizedShape(
+                    kind: .line,
+                    boundingRect: shape.boundingRect,
+                    lineStart: start, lineEnd: newEnd,
+                    arcCenter: nil, arcRadius: nil, arcStartAngle: nil, arcEndAngle: nil, arcClockwise: nil,
+                    triangleVertices: nil
+                )
+            }
+
+        default:
+            break
+        }
+
+        return shape
+    }
+
+    private func commitHoldShape(_ shape: RecognizedShape, perfect: Bool) {
+        guard isHoldingForSnap else { return }
+
+        // Remove the raw stroke
+        var newDrawing = pkCanvasView.drawing
+        if newDrawing.strokes.count > 0 {
+            newDrawing.strokes.removeLast()
+        }
+
+        // Create clean shape stroke
+        let ink = PKInk(.pen, color: currentColor)
+        var strokePoints: [PKStrokePoint] = []
+
+        func addPoint(_ point: CGPoint, time: TimeInterval) {
+            strokePoints.append(PKStrokePoint(
+                location: point,
+                timeOffset: time,
+                size: CGSize(width: brushWidth, height: brushWidth),
+                opacity: 1.0,
+                force: 1.0,
+                azimuth: 0,
+                altitude: .pi / 2
+            ))
+        }
+
+        let rect = shape.boundingRect
+
+        switch shape.kind {
+        case .line:
+            if let start = shape.lineStart, let end = shape.lineEnd {
+                addPoint(start, time: 0)
+                addPoint(end, time: 0.1)
+            }
+
+        case .circle:
+            let cx = rect.midX
+            let cy = rect.midY
+            let rx = rect.width / 2
+            let ry = rect.height / 2
+            let segments = 40
+            for i in 0...segments {
+                let angle = CGFloat(i) / CGFloat(segments) * 2 * .pi
+                let x = cx + rx * cos(angle)
+                let y = cy + ry * sin(angle)
+                addPoint(CGPoint(x: x, y: y), time: Double(i) * 0.01)
+            }
+
+        case .rectangle:
+            let pts = 20
+            var time: Double = 0
+            for i in 0...pts {
+                let t = CGFloat(i) / CGFloat(pts)
+                addPoint(CGPoint(x: rect.minX + rect.width * t, y: rect.minY), time: time)
+                time += 0.005
+            }
+            for i in 1...pts {
+                let t = CGFloat(i) / CGFloat(pts)
+                addPoint(CGPoint(x: rect.maxX, y: rect.minY + rect.height * t), time: time)
+                time += 0.005
+            }
+            for i in 1...pts {
+                let t = CGFloat(i) / CGFloat(pts)
+                addPoint(CGPoint(x: rect.maxX - rect.width * t, y: rect.maxY), time: time)
+                time += 0.005
+            }
+            for i in 1...pts {
+                let t = CGFloat(i) / CGFloat(pts)
+                addPoint(CGPoint(x: rect.minX, y: rect.maxY - rect.height * t), time: time)
+                time += 0.005
+            }
+
+        case .arc:
+            if let center = shape.arcCenter, let radius = shape.arcRadius,
+               let startAngle = shape.arcStartAngle, let endAngle = shape.arcEndAngle {
+                let segments = 30
+                let clockwise = shape.arcClockwise ?? true
+                for i in 0...segments {
+                    let t = CGFloat(i) / CGFloat(segments)
+                    let angle = clockwise ?
+                        startAngle + (endAngle - startAngle) * t :
+                        startAngle - (startAngle - endAngle) * t
+                    let x = center.x + radius * cos(angle)
+                    let y = center.y + radius * sin(angle)
+                    addPoint(CGPoint(x: x, y: y), time: Double(i) * 0.01)
+                }
+            }
+
+        case .triangle:
+            if let vertices = shape.triangleVertices, vertices.count == 3 {
+                let ptsPerSide = 15
+                var time: Double = 0
+                for side in 0..<3 {
+                    let start = vertices[side]
+                    let end = vertices[(side + 1) % 3]
+                    for i in 0...ptsPerSide {
+                        let t = CGFloat(i) / CGFloat(ptsPerSide)
+                        let x = start.x + (end.x - start.x) * t
+                        let y = start.y + (end.y - start.y) * t
+                        addPoint(CGPoint(x: x, y: y), time: time)
+                        time += 0.003
+                    }
+                }
+            }
+        }
+
+        guard strokePoints.count >= 2 else {
+            cancelHoldGestureTimer()
+            return
+        }
+
+        let strokePath = PKStrokePath(controlPoints: strokePoints, creationDate: Date())
+        let stroke = PKStroke(ink: ink, path: strokePath)
+        newDrawing.strokes.append(stroke)
+
+        setDrawingWithUndo(newDrawing)
+        delegate?.canvasDidChange()
+
+        // Clean up
+        cancelHoldGestureTimer()
+
+        // Provide success haptic
+        let generator = UINotificationFeedbackGenerator()
+        generator.notificationOccurred(.success)
+    }
+
+    private func replaceWithCleanShape(_ shape: RecognizedShape) {
+        // Remove the wobbly stroke
+        var newDrawing = pkCanvasView.drawing
+        if newDrawing.strokes.count > 0 {
+            newDrawing.strokes.removeLast()
+        }
+
+        // Add clean shape stroke
+        let cleanStroke = createStrokeFromShape(shape)
+        newDrawing.strokes.append(cleanStroke)
+
+        pkCanvasView.drawing = newDrawing
+    }
+
+    private func createStrokeFromShape(_ shape: RecognizedShape) -> PKStroke {
+        let ink = PKInk(.pen, color: currentColor)
+        var strokePoints: [PKStrokePoint] = []
+
+        func addPoint(_ point: CGPoint, time: TimeInterval) {
+            strokePoints.append(PKStrokePoint(
+                location: point,
+                timeOffset: time,
+                size: CGSize(width: brushWidth, height: brushWidth),
+                opacity: 1.0,
+                force: 1.0,
+                azimuth: 0,
+                altitude: .pi / 2
+            ))
+        }
+
+        let rect = shape.boundingRect
+
+        switch shape.kind {
+        case .line:
+            if let start = shape.lineStart, let end = shape.lineEnd {
+                addPoint(start, time: 0)
+                addPoint(end, time: 0.1)
+            }
+
+        case .circle:
+            let cx = rect.midX
+            let cy = rect.midY
+            let rx = rect.width / 2
+            let ry = rect.height / 2
+            let segments = 40
+            for i in 0...segments {
+                let angle = CGFloat(i) / CGFloat(segments) * 2 * .pi
+                let x = cx + rx * cos(angle)
+                let y = cy + ry * sin(angle)
+                addPoint(CGPoint(x: x, y: y), time: Double(i) * 0.01)
+            }
+
+        case .rectangle:
+            addPoint(CGPoint(x: rect.minX, y: rect.minY), time: 0)
+            addPoint(CGPoint(x: rect.maxX, y: rect.minY), time: 0.1)
+            addPoint(CGPoint(x: rect.maxX, y: rect.maxY), time: 0.2)
+            addPoint(CGPoint(x: rect.minX, y: rect.maxY), time: 0.3)
+            addPoint(CGPoint(x: rect.minX, y: rect.minY), time: 0.4)
+
+        case .arc:
+            if let center = shape.arcCenter, let radius = shape.arcRadius,
+               let startAngle = shape.arcStartAngle, let endAngle = shape.arcEndAngle {
+                let segments = 30
+                for i in 0...segments {
+                    let t = CGFloat(i) / CGFloat(segments)
+                    let angle = startAngle + (endAngle - startAngle) * t
+                    let x = center.x + radius * cos(angle)
+                    let y = center.y + radius * sin(angle)
+                    addPoint(CGPoint(x: x, y: y), time: Double(i) * 0.01)
+                }
+            }
+
+        case .triangle:
+            if let vertices = shape.triangleVertices, vertices.count == 3 {
+                addPoint(vertices[0], time: 0)
+                addPoint(vertices[1], time: 0.1)
+                addPoint(vertices[2], time: 0.2)
+                addPoint(vertices[0], time: 0.3)
+            }
+        }
+
+        let strokePath = PKStrokePath(controlPoints: strokePoints, creationDate: Date())
+        return PKStroke(ink: ink, path: strokePath)
+    }
+
     // MARK: - Layer Support
 
     func clearUndoHistory() {
@@ -1506,6 +2125,7 @@ class SmoothCanvasUIView: UIView, PKCanvasViewDelegate, UIScrollViewDelegate {
         shapePreviewLayer.frame = CGRect(x: 0, y: 0, width: newSize, height: newSize)
         selectionPreviewLayer.frame = CGRect(x: 0, y: 0, width: newSize, height: newSize)
         resizeHandleLayer.frame = CGRect(x: 0, y: 0, width: newSize, height: newSize)
+        holdPreviewLayer.frame = CGRect(x: 0, y: 0, width: newSize, height: newSize)
         scrollView.contentSize = CGSize(width: newSize, height: newSize)
         checkerboardView.backgroundColor = buildCheckerPattern()
         layoutIfNeeded()
@@ -1543,5 +2163,11 @@ private extension UIImage {
         let a = CGFloat(data[pixelIndex + 3]) / 255.0
 
         return UIColor(red: r, green: g, blue: b, alpha: a)
+    }
+}
+
+extension CGRect {
+    var center: CGPoint {
+        CGPoint(x: midX, y: midY)
     }
 }
